@@ -27,3 +27,4 @@ tests/
 *.spec
 node_modules/
 /autogame_xcx.egg-info/
+/models/
