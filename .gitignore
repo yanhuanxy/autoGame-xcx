@@ -1,0 +1,29 @@
+target/
+!.mvn/wrapper/maven-wrapper.jar
+
+### STS ###
+.apt_generated
+.classpath
+.factorypath
+.project
+.settings
+.springBeans
+
+### IntelliJ IDEA ###
+.idea
+*.iws
+*.iml
+*.ipr
+
+### NetBeans ###
+build/
+dist/
+data/*.txt
+data/*.db
+data/asset_auto/
+logs/
+.venv/
+tests/
+*.spec
+node_modules/
+/autogame_xcx.egg-info/

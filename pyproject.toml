@@ -1,0 +1,28 @@
+[project]
+name = "autogame-xcx"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+license = "MIT"
+classifiers = [  # PyPI 分类标签
+    "Programming Language :: Python :: 3"
+]
+dependencies = [
+    "opencv-python>=4.11.0.86",
+    "pillow>=11.2.1",
+    "psutil>=7.0.0",
+    "pyautogui>=0.9.54",
+    "pywin32>=310",
+    "setuptools>=80.9.0",
+]
+authors = [{ name = "Your Name", email = "your.email@example.com" }]
+
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
+
+
+[[tool.uv.index]]
+url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+default = true
