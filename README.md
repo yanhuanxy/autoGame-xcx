@@ -37,14 +37,21 @@
     ```bash
     pip install -r requirements.txt
     ```
+    > 需要校验本地环境是否支持GPU推理 否则使用 CPU
 
-3.  **安装 Tesseract-OCR**
+3.  **安装 [duguang-ocr-onnx-v2](models/duguang-ocr-onnx-v2)**
 
-    本项目使用 `pytesseract` 库进行文字识别，它依赖于 Google 的 Tesseract-OCR 引擎。请根据你的操作系统下载并安装它。
+    本项目使用 `duguang-ocr-onnx-v2` 模型进行文字识别，它依赖于 duguang 的 duguang-ocr-onnx-v2 模型。请根据你的操作系统下载并安装它。
 
-    *   [Tesseract 安装文档](https://tesseract-ocr.github.io/tessdoc/Installation.html)
-    *   在安装过程中，请记住 Tesseract 的安装路径，我们稍后需要在代码中配置它。
-
+    需要下载下面表格中一对文字识别(`rec`)和检测(`det`)模型。
+    
+    | 模型           | 模型大小      | 模型原始仓库                                                 | 百度网盘下载                                                 | modelscope下载（高速）                                       | 个人评价 |
+    | -------------- | ------------- | ------------------------------------------------------------ | ------------------------------------------------------------ | ------------------------------------------------------------ | -------- |
+    | base_seglink++ | 73.2MB+78MB   | rec[地址](https://modelscope.cn/models/iic/cv_convnextTiny_ocr-recognition-general_damo/summary)，det [地址](https://modelscope.cn/models/iic/cv_resnet18_ocr-detection-line-level_damo/summary) | [地址](https://pan.baidu.com/s/1Vch_5kcL_FqQet5G9pfEJQ?pwd=tjp9) | [v2地址](https://modelscope.cn/models/mscoder/duguang-ocr-onnx-v2) | 9分      |
+    | large          | 73.2MB+46.4MB | rec[地址](https://modelscope.cn/models/iic/cv_convnextTiny_ocr-recognition-general_damo/summary)，det [地址](https://www.modelscope.cn/models/iic/cv_resnet18_ocr-detection-db-line-level_damo/summary) | [地址](https://pan.baidu.com/s/1Vch_5kcL_FqQet5G9pfEJQ?pwd=tjp9) | [v2地址](https://modelscope.cn/models/mscoder/duguang-ocr-onnx-v2) | 8分      |
+    | small          | 7.4MB+5.2MB   | rec[地址](https://modelscope.cn/models/iic/cv_LightweightEdge_ocr-recognitoin-general_damo/summary)，det [地址](https://www.modelscope.cn/models/iic/cv_proxylessnas_ocr-detection-db-line-level_damo/summary) | [地址](https://pan.baidu.com/s/1Vch_5kcL_FqQet5G9pfEJQ?pwd=tjp9) | [v2地址](https://modelscope.cn/models/mscoder/duguang-ocr-onnx-v2) | 5分      |
+    
+    >  不同的rec和det可以自由组合使用
 4.  **运行项目**
 
     确保你**处于已激活的虚拟环境**中，然后运行主程序：
@@ -56,4 +63,4 @@
 ## 注意事项
 
 *   请将需要识别的图片素材放置在 `images` 文件夹下（如果需要）。
-*   在首次运行时，可能需要根据 Tesseract 的实际安装路径修改 `main.py` 文件中的配置。 
+*   在首次运行时，可能需要根据 duguang-ocr-onnx-v2 模型 的实际路径修改 `main.py` 文件中的配置。 
