@@ -3,7 +3,7 @@ from core import window
 from modules import trial, boss, experience, spacetime, daily
 
 # --- 配置 ---
-TARGET_APP_NAME = "聊斋搜神记"
+TARGET_APP_NAME = "任务管理器" #"聊斋搜神记"
 
 # --- 初始化 ---
 def initialize():
@@ -13,13 +13,13 @@ def initialize():
     print("正在初始化...")
 
     # 查找目标窗口
-    hwnd = window.find_target_window(TARGET_APP_NAME)
+    hwnd,title,process_name = window.find_target_window(TARGET_APP_NAME)
     if not hwnd:
         print(f"错误：未找到名为 '{TARGET_APP_NAME}' 的应用程序。")
         return None
 
     print(f"成功找到窗口，句柄: {hwnd}")
-    window.activate_window(hwnd)
+    window.activate_window(hwnd, title=title)
     time.sleep(1) # 等待窗口激活
     return hwnd
 

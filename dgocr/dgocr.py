@@ -59,7 +59,7 @@ class DGOCR:
         else:
             self.det_model = DGOCRDetection(self.det_path, self.img_size, self.device, self.cpu_thread_num)
 
-    def run(self, images):
+    def run(self, images: list, type):
         """
         运行模型
 
@@ -118,10 +118,20 @@ class DGOCR:
         if not isinstance(inputs, list):
             if isinstance(inputs, str):
                 image_datas = [cv2.imread(inputs)]
+            elif isinstance(inputs, Image.Image):
+                image_datas = [cv2.cvtColor(np.array(inputs), cv2.COLOR_RGB2BGR)]
             else:
                 image_datas = [inputs]
         else:
-            image_datas = [cv2.imread(img) if isinstance(img, str) else img for img in inputs]
+            if isinstance(inputs, str):
+                image_datas = [cv2.imread(inputs)]
+            else:
+                for img in inputs:
+                    if isinstance(img, Image.Image):
+                        image_datas.append(cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR))
+                    else:
+                        image_datas.append(cv2.imread(img))
+            # image_datas = [cv2.cvtColor(np.array(img), cv2.COLOR_BGR2RGB) if isinstance(img, str) else img for img in inputs]
         org_img_sizes = [img.shape[:2] for img in image_datas]
         return image_datas, org_img_sizes
 
