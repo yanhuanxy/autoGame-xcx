@@ -10,6 +10,7 @@ import os
 import numpy as np
 import onnxruntime as rt
 import cv2
+from core.opencv_util import CvTool
 
 class DGOCRRecognition:
     def __init__(
@@ -160,7 +161,7 @@ class DGOCRRecognition:
             img: 图片
         """
         if isinstance(img, str):
-            img = cv2.imread(img)
+            img = CvTool.imread(img)
         img = self.keepratio_resize(img)
         
         img = np.float32(img)

@@ -13,6 +13,7 @@ import numpy as np
 import onnxruntime as rt
 from .utils_seglink import decode_segments_links_python, combine_segments_python
 from .utils_seglink import cal_width, nms_python, rboxes_to_polygons
+from core.opencv_util import CvTool
 
 class SegLinkOCRDetection():
     """
@@ -181,7 +182,7 @@ class SegLinkOCRDetection():
         # img = np.array(img)
         # cv2
         if isinstance(input, str):
-            img = cv2.imread(input)
+            img = CvTool.imread(input)
         else:
             img = input
         # 将图像从 BGR 转换为 RGB（OpenCV 默认读取的是 BGR）

@@ -54,7 +54,7 @@ def find_text_in_window(text_to_find, hwnd, lang='chi_sim'):
         # white_image.paste(screenshot.crop((width * 0.8, height * 0.4, width, height * 0.8)), (0, 0))
         save_path = os.path.join(save_dir, "region_screenshot_0.png")
         # white_image.save(save_path)
-        cv2.imwrite(save_path, white_canvas)
+        CvTool.imwrite(save_path, white_canvas)
 
         # 3. 使用 读光OCR 获取详细的 OCR 数据
         # image_to_data 返回一个字典，包含已识别的文字、位置、置信度等信息

@@ -26,6 +26,7 @@ import PIL
 from PIL import Image, ImageDraw, ImageFont
 import math
 import random
+from core.opencv_util import CvTool
 
 
 # 默认使用阿里普惠字体
@@ -39,7 +40,7 @@ def str2int_tuple(v):
     return tuple([int(i.strip()) for i in v.split(",")])
 
 def draw_e2e_res(dt_boxes, strs, img_path):
-    src_im = cv2.imread(img_path)
+    src_im = CvTool.imread(img_path)
     for box, str in zip(dt_boxes, strs):
         box = box.astype(np.int32).reshape((-1, 1, 2))
         cv2.polylines(src_im, [box], True, color=(255, 255, 0), thickness=2)
@@ -308,7 +309,7 @@ def base64_to_cv2(b64str):
 
     data = base64.b64decode(b64str.encode("utf8"))
     data = np.frombuffer(data, np.uint8)
-    data = cv2.imdecode(data, cv2.IMREAD_COLOR)
+    data = cv2.imdecode(data, CvTool.imread_COLOR)
     return data
 
 

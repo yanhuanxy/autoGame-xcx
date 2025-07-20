@@ -15,6 +15,7 @@ from .det import DGOCRDetection
 from .det_seglink import SegLinkOCRDetection
 from .visual import draw_ocr_box_txt
 from .utils import crop_image, order_point, preprocess, postprocess
+from core.opencv_util import CvTool
 
 class DGOCR:
     def __init__(
@@ -117,20 +118,20 @@ class DGOCR:
         org_img_sizes = []
         if not isinstance(inputs, list):
             if isinstance(inputs, str):
-                image_datas = [cv2.imread(inputs)]
+                image_datas = [CvTool.imread(inputs)]
             elif isinstance(inputs, Image.Image):
                 image_datas = [cv2.cvtColor(np.array(inputs), cv2.COLOR_RGB2BGR)]
             else:
                 image_datas = [inputs]
         else:
             if isinstance(inputs, str):
-                image_datas = [cv2.imread(inputs)]
+                image_datas = [CvTool.imread(inputs)]
             else:
                 for img in inputs:
                     if isinstance(img, Image.Image):
                         image_datas.append(cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR))
                     else:
-                        image_datas.append(cv2.imread(img))
+                        image_datas.append(CvTool.imread(img))
             # image_datas = [cv2.cvtColor(np.array(img), cv2.COLOR_BGR2RGB) if isinstance(img, str) else img for img in inputs]
         org_img_sizes = [img.shape[:2] for img in image_datas]
         return image_datas, org_img_sizes

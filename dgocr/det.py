@@ -7,6 +7,7 @@ import numpy as np
 import pyclipper
 from shapely.geometry import Polygon
 import onnxruntime as rt
+from core.opencv_util import CvTool
 
 class DGOCRDetection:
     def __init__(
@@ -115,7 +116,7 @@ class DGOCRDetection:
 
     def preprocess(self, image):
         if isinstance(image, str):
-            image = cv2.imread(image)
+            image = CvTool.imread(image)
         height, width, _ = image.shape
         image_resize = cv2.resize(image, (self.img_size, self.img_size))        
         image_resize = image_resize - np.array([123.68, 116.78, 103.94], dtype=np.float32)

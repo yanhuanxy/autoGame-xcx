@@ -57,7 +57,7 @@
     确保你**处于已激活的虚拟环境**中，然后运行主程序：
 
     ```bash
-    python main.py
+    python process_main.py
     ```
 
 ## 注意事项

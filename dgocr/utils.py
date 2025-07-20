@@ -4,6 +4,7 @@
 import math
 import numpy as np
 import cv2
+from core.opencv_util import CvTool
 
 def crop_image(img, position):
     """裁剪图像脚本"""
@@ -87,7 +88,7 @@ def preprocess(image, target_size=(1600, 1600), fill_color=(255, 255, 255)):
     """
     # 读取图片
     if isinstance(image, str):
-        image = cv2.imread(image)
+        image = CvTool.imread(image)
     if image is None:  
         raise ValueError(f"Image not found at path: {image}")  
     
