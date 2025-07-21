@@ -5,7 +5,7 @@ import sys
 import os
 
 # 添加src目录到Python路径
-sys.path.append('src')
+sys.path.append('../src')
 
 def test_dpi_fix():
     """测试DPI修复"""

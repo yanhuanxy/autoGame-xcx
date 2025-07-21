@@ -33,7 +33,7 @@ class TemplateManager:
             dict: 模板数据结构
         """
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        version = f"v1.0_{timestamp}"
+        version = f"md_{timestamp}"
         
         template = {
             "template_info": {
@@ -76,7 +76,7 @@ class TemplateManager:
         return task
     
     def add_step_to_task(self, task, step_id, action_type, user_marked_area, 
-                        reference_image, match_threshold=0.85, click_point=None, 
+                        reference_image, match_algorithm='hybrid', match_threshold=0.85, click_point=None,
                         wait_after=2000, timeout=5000):
         """向任务添加步骤"""
         step = {

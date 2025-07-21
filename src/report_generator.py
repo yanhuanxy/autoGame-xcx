@@ -23,7 +23,7 @@ class ReportGenerator:
         """生成HTML格式的执行报告"""
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         html_filename = f"execution_report_{timestamp}.html"
-        html_path = os.path.join(self.reports_dir, html_filename)
+        html_path = os.path.join(self.reports_dir, template_info, html_filename)
         
         html_content = self._create_html_content(execution_data, template_info)
         

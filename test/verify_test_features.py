@@ -132,7 +132,7 @@ def main():
     
     # 6. 验证启动脚本
     print("\n6. 检查启动脚本...")
-    if os.path.exists('start_gui.py'):
+    if os.path.exists('../start_gui.py'):
         print("   ✅ GUI启动脚本存在")
     else:
         print("   ❌ GUI启动脚本不存在")
