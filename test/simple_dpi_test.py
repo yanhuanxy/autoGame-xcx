@@ -2,17 +2,16 @@
 简化的DPI修复测试
 """
 import sys
-import os
 
 # 添加src目录到Python路径
-sys.path.append('../src')
+sys.path.append('../gui')
 
 def test_dpi_fix():
     """测试DPI修复"""
     print("测试DPI处理修复...")
     
     try:
-        from src.coordinate_converter import CoordinateConverter
+        from gui.core.coordinate_converter import CoordinateConverter
         
         # 创建测试实例
         template_res = {'width': 1920, 'height': 1080}

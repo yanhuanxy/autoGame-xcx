@@ -1,0 +1,6 @@
+from gui.dialog.area_config_dialog import AreaConfigDialog
+from gui.dialog.area_test_dialog import AreaTestDialog
+from gui.dialog.matching_test_dialog import MatchingTestDialog
+from gui.dialog.template_test_dialog import TemplateTestDialog
+from gui.dialog.template_execution_dialog import TemplateExecutionDialog
+from gui.dialog.report_viewer_dialog import ReportViewerDialog

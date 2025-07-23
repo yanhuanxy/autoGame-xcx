@@ -6,7 +6,9 @@ import cv2
 import numpy as np
 from skimage.metrics import structural_similarity as ssim
 import os
-from core.opencv_util import CvTool
+
+from util.constants import DEBUG_IMAGES_PATH
+from util.opencv_util import CvTool
 
 class ImageMatcher:
     def __init__(self):
@@ -215,7 +217,7 @@ class ImageMatcher:
     def save_debug_image(self, image, filename):
         """保存调试图像"""
         try:
-            debug_dir = "debug_images"
+            debug_dir = DEBUG_IMAGES_PATH
             if not os.path.exists(debug_dir):
                 os.makedirs(debug_dir)
             

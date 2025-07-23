@@ -6,8 +6,10 @@ import os
 import json
 from datetime import datetime
 
+from util.constants import TEMPLATES_PATH
+
 # 添加src目录到Python路径
-src_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'src')
+src_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'gui')
 sys.path.insert(0, src_path)
 
 def create_test_templates():
@@ -15,7 +17,7 @@ def create_test_templates():
     print("创建测试模板文件...")
     
     # 确保templates目录存在
-    templates_dir = "../templates"
+    templates_dir = TEMPLATES_PATH
     if not os.path.exists(templates_dir):
         os.makedirs(templates_dir)
     
@@ -181,7 +183,7 @@ def test_template_list_display():
     
     try:
         from PyQt6.QtWidgets import QApplication
-        from src.main_gui import MainGUI
+        from gui.main_gui import MainGUI
         
         # 创建应用程序
         app = QApplication(sys.argv)

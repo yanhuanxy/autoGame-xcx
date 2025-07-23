@@ -6,9 +6,9 @@ import os
 import traceback
 
 # 添加src目录到Python路径
-src_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'src')
+src_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'gui')
 sys.path.insert(0, src_path)
-from core.opencv_util import CvTool
+from util.opencv_util import CvTool
 
 def main():
     print("验证匹配对话框功能...")
@@ -28,13 +28,13 @@ def main():
         
         # 3. 测试自定义模块导入
         print("3. 测试自定义模块导入...")
-        from src.image_matcher import ImageMatcher
-        from src.window_controller import GameWindowController
+        from gui.core.image_matcher import ImageMatcher
+        from gui.core.window_controller import GameWindowController
         print("   ✓ 自定义模块导入成功")
         
         # 4. 测试MatchingTestDialog导入
         print("4. 测试MatchingTestDialog导入...")
-        from src.template_creator_gui import MatchingTestDialog
+        from gui.template_creator_gui import MatchingTestDialog
         print("   ✓ MatchingTestDialog导入成功")
         
         # 5. 创建测试应用

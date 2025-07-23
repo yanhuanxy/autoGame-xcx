@@ -5,12 +5,14 @@
 import json
 import os
 from datetime import datetime
-from core.opencv_util import CvTool
+
+from util.constants import REFERENCE_IMAGES_PATH, TEMPLATES_PATH
+from util.opencv_util import CvTool
 
 class TemplateManager:
-    def __init__(self, templates_dir="templates", images_dir="reference_images"):
-        self.templates_dir = templates_dir
-        self.images_dir = images_dir
+    def __init__(self):
+        self.templates_dir = TEMPLATES_PATH
+        self.images_dir = REFERENCE_IMAGES_PATH
         self._ensure_directories()
     
     def _ensure_directories(self):

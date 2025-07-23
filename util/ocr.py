@@ -2,6 +2,8 @@ import os
 
 import pyautogui
 import win32gui
+
+from util.opencv_util import CvTool
 from dgocr.dgocr import DGOCR
 import cv2
 import numpy as np

@@ -6,7 +6,7 @@ import sys
 import os
 
 # 添加src目录到Python路径
-src_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'src')
+src_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'gui')
 sys.path.insert(0, src_path)
 
 def test_dpi_awareness_detection():
@@ -15,7 +15,7 @@ def test_dpi_awareness_detection():
     print("=" * 50)
     
     try:
-        from src.coordinate_converter import CoordinateConverter
+        from gui.core.coordinate_converter import CoordinateConverter
         
         # 创建测试转换器
         template_res = {'width': 1920, 'height': 1080}
@@ -55,7 +55,7 @@ def test_coordinate_scaling_scenarios():
     print("=" * 50)
     
     try:
-        from src.coordinate_converter import CoordinateConverter
+        from gui.core.coordinate_converter import CoordinateConverter
         
         # 测试坐标
         test_area = {'x': 400, 'y': 300, 'width': 120, 'height': 40}
@@ -136,7 +136,7 @@ def test_dpi_fix_effectiveness():
     print("=" * 50)
     
     try:
-        from src.coordinate_converter import CoordinateConverter
+        from gui.core.coordinate_converter import CoordinateConverter
         
         # 模拟高DPI场景
         template_res = {'width': 1920, 'height': 1080}

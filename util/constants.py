@@ -47,4 +47,14 @@ ele_coords = {
             "时空": [[[[417.0, 576.0], [449.0, 577.0], [449.0, 593.0], [417.0, 592.0]]], ["时空", 0.9988197831827534]]
         }
     }
-} 
+}
+# 区域截图
+REFERENCE_IMAGES_PATH = 'data/reference_images'
+# debug
+DEBUG_IMAGES_PATH = "data/debug_images"
+TEST_IMAGES_PATH = "data/test_images"
+DEMO_IMAGES_PATH = "data/demo_images"
+# 报告文件
+REPORTS_PATH = 'data/reports'
+# 模板
+TEMPLATES_PATH = 'data/templates'

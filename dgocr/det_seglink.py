@@ -13,7 +13,7 @@ import numpy as np
 import onnxruntime as rt
 from .utils_seglink import decode_segments_links_python, combine_segments_python
 from .utils_seglink import cal_width, nms_python, rboxes_to_polygons
-from core.opencv_util import CvTool
+from util.opencv_util import CvTool
 
 class SegLinkOCRDetection():
     """

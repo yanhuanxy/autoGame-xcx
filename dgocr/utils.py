@@ -4,7 +4,7 @@
 import math
 import numpy as np
 import cv2
-from core.opencv_util import CvTool
+from util.opencv_util import CvTool
 
 def crop_image(img, position):
     """裁剪图像脚本"""

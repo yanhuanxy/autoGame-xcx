@@ -5,7 +5,7 @@ import sys
 import os
 
 # 添加src目录到Python路径
-src_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'src')
+src_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'gui')
 sys.path.insert(0, src_path)
 
 def verify_list_improvements():

@@ -77,24 +77,24 @@ autoGame-LZ/
 
 -   每个模块（如 `trial.py`）都将包含一个 `run(hwnd)` 函数作为该模块任务的入口。
 -   `run` 函数将优先使用 `core.device.click_element_by_name` 进行导航。
--   **示例: `modules/trial.py`**
-    ```python
-    from core import device, ocr
+- **示例: `modules/trial.py`**
+  ```python
+  from util import device, ocr
 
-    def run(hwnd):
-        print("开始执行[试炼]模块...")
-        # 1. 点击"试炼"按钮
-        if device.click_element_by_name("试炼", hwnd):
-            # (可能需要短暂延时等待界面切换)
-            # 2. 查找"鬼影迷境"
-            dungeon_coords = ocr.find_text_in_window("鬼影迷境", hwnd)
-            if dungeon_coords:
-                print("  成功找到[鬼影迷境]")
-                # ... 后续点击操作 ...
-                return True
-        print("  [试炼]模块执行失败")
-        return False
-    ```
+  def run(hwnd):
+      print("开始执行[试炼]模块...")
+      # 1. 点击"试炼"按钮
+      if device.click_element_by_name("试炼", hwnd):
+          # (可能需要短暂延时等待界面切换)
+          # 2. 查找"鬼影迷境"
+          dungeon_coords = ocr.find_text_in_window("鬼影迷境", hwnd)
+          if dungeon_coords:
+              print("  成功找到[鬼影迷境]")
+              # ... 后续点击操作 ...
+              return True
+      print("  [试炼]模块执行失败")
+      return False
+  ```
 
 ## 5. 主程序流程 (`main.py`)
 

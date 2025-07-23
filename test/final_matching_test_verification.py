@@ -6,7 +6,7 @@ import sys
 import os
 
 # 添加src目录到Python路径
-src_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'src')
+src_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'gui')
 sys.path.insert(0, src_path)
 
 def verify_matching_test_implementation():
@@ -19,7 +19,7 @@ def verify_matching_test_implementation():
     # 1. 验证MatchingTestDialog类存在
     print("1. 验证MatchingTestDialog类...")
     try:
-        from src.template_creator_gui import MatchingTestDialog
+        from gui.template_creator_gui import MatchingTestDialog
         print("   ✅ MatchingTestDialog类导入成功")
         verification_results.append(("MatchingTestDialog类", True))
     except Exception as e:
@@ -110,7 +110,7 @@ def verify_matching_test_implementation():
     # 4. 验证AreaConfigDialog中的test_matching方法
     print("4. 验证AreaConfigDialog中的test_matching方法...")
     try:
-        from src.template_creator_gui import AreaConfigDialog
+        from gui.template_creator_gui import AreaConfigDialog
         
         if hasattr(AreaConfigDialog, 'test_matching'):
             print("   ✅ test_matching方法存在")
@@ -126,7 +126,7 @@ def verify_matching_test_implementation():
     # 5. 验证图像匹配器功能
     print("5. 验证图像匹配器功能...")
     try:
-        from src.image_matcher import ImageMatcher
+        from gui.core.image_matcher import ImageMatcher
         import numpy as np
         import cv2
         

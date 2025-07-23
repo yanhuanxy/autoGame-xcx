@@ -10,11 +10,11 @@ from datetime import datetime
 # 添加当前目录到Python路径
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from window_controller import GameWindowController
-from image_matcher import ImageMatcher
-from coordinate_converter import CoordinateConverter
-from template_manager import TemplateManager
-from game_executor import GameExecutor
+from gui.core.window_controller import GameWindowController
+from gui.core.image_matcher import ImageMatcher
+from gui.core.coordinate_converter import CoordinateConverter
+from gui.core.template_manager import TemplateManager
+from gui.core.game_executor import GameExecutor
 
 def test_window_detection():
     """测试窗口检测功能"""

@@ -26,7 +26,7 @@ import PIL
 from PIL import Image, ImageDraw, ImageFont
 import math
 import random
-from core.opencv_util import CvTool
+from util.opencv_util import CvTool
 
 
 # 默认使用阿里普惠字体

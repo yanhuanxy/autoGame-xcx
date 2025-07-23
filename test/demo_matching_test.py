@@ -6,10 +6,10 @@ import sys
 import os
 import cv2
 import numpy as np
-from core.opencv_util import CvTool
+from util.opencv_util import CvTool
 
 # 添加src目录到Python路径
-src_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'src')
+src_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'gui')
 sys.path.insert(0, src_path)
 
 def create_demo_images():
@@ -17,7 +17,7 @@ def create_demo_images():
     print("创建演示图像...")
     
     # 创建演示目录
-    demo_dir = "demo_images"
+    demo_dir = DEMO_IMAGES_PATH
     if not os.path.exists(demo_dir):
         os.makedirs(demo_dir)
     
@@ -56,7 +56,7 @@ def demo_image_matching():
     print("\n演示图像匹配功能...")
     
     try:
-        from src.image_matcher import ImageMatcher
+        from gui.core.image_matcher import ImageMatcher
         
         matcher = ImageMatcher()
         demo_dir = create_demo_images()

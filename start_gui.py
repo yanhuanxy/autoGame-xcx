@@ -6,7 +6,7 @@ import sys
 import os
 
 # 添加src目录到Python路径
-src_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'src')
+src_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'gui')
 sys.path.insert(0, src_path)
 
 def main():
@@ -34,7 +34,7 @@ def main():
             return
         
         # 启动GUI
-        from src import template_creator_gui as gui
+        from gui import template_creator_gui as gui
         print("✓ 启动GUI界面...")
         gui.main()
         

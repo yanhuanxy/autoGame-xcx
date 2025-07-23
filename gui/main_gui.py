@@ -4,17 +4,21 @@
 """
 import sys
 import os
-import cv2
 from datetime import datetime
 from PyQt6.QtWidgets import *
 from PyQt6.QtCore import *
 from PyQt6.QtGui import *
 
-from window_controller import GameWindowController
-from image_matcher import ImageMatcher
-from template_manager import TemplateManager
-from game_executor import GameExecutor
-from report_generator import ReportGenerator
+from gui.dialog.area_config_dialog import AreaConfigDialog
+from gui.dialog.report_viewer_dialog import ReportViewerDialog
+from gui.dialog.template_execution_dialog import TemplateExecutionDialog
+from gui.core.window_controller import GameWindowController
+from gui.core.image_matcher import ImageMatcher
+from gui.core.template_manager import TemplateManager
+from gui.core.game_executor import GameExecutor
+from gui.core.report_generator import ReportGenerator
+from util.constants import TEMPLATES_PATH
+
 
 class FlowLayout(QLayout):
     """流式布局 - 自动换行的布局管理器"""
@@ -674,6 +678,9 @@ class IntegratedTemplateCreator(QWidget):
         dialog = AreaConfigDialog(original_rect, self.current_screenshot, self)
         if dialog.exec() == QDialog.DialogCode.Accepted:
             area_data = dialog.get_area_data()
+            # 保存参考图像
+            self.save_reference_image(area_data, area_data['name'])
+            area_data['reference_image'] = f"{area_data['name']}.png"
             self.add_marked_area(area_data)
 
     def convert_to_original_coordinates(self, display_rect):
@@ -752,6 +759,20 @@ class IntegratedTemplateCreator(QWidget):
         except Exception as e:
             print(f"绘制区域标记时出错: {e}")
 
+    def save_reference_image(self, area_coords, area_name):
+        """保存参考图像"""
+        if self.current_screenshot is None:
+            return
+
+        # 提取标记区域的图像
+        x, y, w, h = area_coords['x'], area_coords['y'], area_coords['width'], area_coords['height']
+        area_image = self.current_screenshot[y:y+h, x:x+w]
+
+        # 保存图像
+        template_name = self.template_name_edit.text() or "unnamed_template"
+        self.template_manager.save_reference_image(area_image, f"{area_name}.png", template_name)
+
+
     # 任务管理方法
     def add_task(self):
         """添加任务"""
@@ -796,6 +817,11 @@ class IntegratedTemplateCreator(QWidget):
             if dialog.exec() == QDialog.DialogCode.Accepted:
                 # 更新区域数据
                 updated_data = dialog.get_area_data()
+                # 如果名称改变了，需要重新保存参考图像
+                if updated_data['name'] != area_data['name']:
+                    self.save_reference_image(area_data['user_marked_area'], updated_data['name'])
+                    updated_data['reference_image'] = f"{updated_data['name']}.png"
+
                 self.marked_areas[current_row] = updated_data
                 self.update_areas_list()
                 self.draw_area_markers()
@@ -806,9 +832,19 @@ class IntegratedTemplateCreator(QWidget):
         if current_row >= 0 and current_row < len(self.marked_areas):
             area_data = self.marked_areas[current_row]
 
+            area_data['user_marked_area'] = {
+                    'x': area_data['x'],
+                    'y': area_data['y'],
+                    'width': area_data['width'],
+                    'height': area_data['height']
+                }
+            if self.current_screenshot is None:
+                QMessageBox.warning(self, "提示", "请先截取游戏界面")
+                return
+
             # 创建测试对话框
-            from template_creator_gui import AreaTestDialog
-            dialog = AreaTestDialog(area_data, self.current_screenshot, self.image_matcher, self)
+            from gui.dialog.area_test_dialog import AreaTestDialog
+            dialog = AreaTestDialog(area_data, self.current_screenshot, self)
             dialog.exec()
 
     def delete_selected_area(self):
@@ -872,7 +908,10 @@ class IntegratedTemplateCreator(QWidget):
                         self.current_task,
                         area_data['name'],
                         area_data['action_type'],
-                        area_data['user_marked_area'],
+                        {'x': area_data['x'],
+                         'y': area_data['y'],
+                         'width': area_data['width'],
+                         'height': area_data['height']},
                         area_data['reference_image'],
                         area_data['match_algorithm'],
                         area_data['match_threshold'],
@@ -894,7 +933,10 @@ class IntegratedTemplateCreator(QWidget):
                         default_task,
                         area_data['name'],
                         area_data['action_type'],
-                        area_data['user_marked_area'],
+                        {'x': area_data['x'],
+                         'y': area_data['y'],
+                         'width': area_data['width'],
+                         'height': area_data['height']},
                         area_data['reference_image'],
                         area_data['match_algorithm'],
                         area_data['match_threshold'],
@@ -930,7 +972,7 @@ class IntegratedTemplateCreator(QWidget):
                 return
 
         # 创建模板测试对话框
-        from template_creator_gui import TemplateTestDialog
+        from dialog.template_test_dialog import TemplateTestDialog
         dialog = TemplateTestDialog(self.current_template, self)
         dialog.exec()
 
@@ -942,6 +984,7 @@ class IntegratedTemplateCreator(QWidget):
         self.marked_areas.clear()
         self.current_task = None
         self.current_screenshot = None
+        self.current_template = None
 
         self.tasks_list.clear()
         self.areas_list.clear()
@@ -1074,177 +1117,6 @@ class ClickableLabel(QLabel):
 
             painter.drawRect(x, y, width, height)
 
-class AreaConfigDialog(QDialog):
-    """区域配置对话框"""
-
-    def __init__(self, area_coords, screenshot, parent=None):
-        super().__init__(parent)
-        self.area_coords = area_coords
-        self.screenshot = screenshot
-        self.area_data = {}
-
-        self.init_ui()
-
-    def init_ui(self):
-        self.setWindowTitle("配置操作区域")
-        self.setModal(True)
-        self.resize(400, 300)
-
-        layout = QVBoxLayout(self)
-
-        # 区域信息
-        info_group = QGroupBox("区域信息")
-        info_layout = QFormLayout(info_group)
-
-        self.name_edit = QLineEdit()
-        self.name_edit.setPlaceholderText("例如: 签到按钮")
-
-        info_layout.addRow("区域名称:", self.name_edit)
-        info_layout.addRow("坐标:", QLabel(f"({self.area_coords['x']}, {self.area_coords['y']})"))
-        info_layout.addRow("大小:", QLabel(f"{self.area_coords['width']} x {self.area_coords['height']}"))
-        layout.addWidget(info_group)
-
-        # 点击位置配置
-        self.click_group = QGroupBox("点击位置")
-        click_layout = QFormLayout(self.click_group)
-
-        self.click_x = QSpinBox()
-        self.click_x.setRange(0, 9999)
-        self.click_x.setValue(self.area_coords['x'] + self.area_coords['width'] // 2)
-
-        self.click_y = QSpinBox()
-        self.click_y.setRange(0, 9999)
-        self.click_y.setValue(self.area_coords['y'] + self.area_coords['height'] // 2)
-
-        click_layout.addRow("X坐标:", self.click_x)
-        click_layout.addRow("Y坐标:", self.click_y)
-        layout.addWidget(self.click_group)
-
-        # 操作类型
-        action_group = QGroupBox("操作类型")
-        action_layout = QFormLayout(action_group)
-
-        self.action_combo = QComboBox()
-        action = [
-            ("image_verify_and_click", "图像验证并点击"),
-            ("image_verify_only", "仅图像验证"),
-            ("click_only", "仅点击"),
-            ("wait_for_image", "等待图片出现")
-        ]
-        for algo_id, algo_name in action:
-            self.action_combo.addItem(algo_name, algo_id)
-        self.action_combo.setCurrentText("图像验证并点击")
-
-        action_layout.addRow("操作类型:", self.action_combo)
-        layout.addWidget(action_group)
-
-        # 匹配参数
-        match_group = QGroupBox("匹配参数")
-        match_layout = QFormLayout(match_group)
-
-        self.threshold_spin = QDoubleSpinBox()
-        self.threshold_spin.setRange(0.1, 1.0)
-        self.threshold_spin.setValue(0.85)
-        self.threshold_spin.setSingleStep(0.05)
-        self.threshold_spin.setDecimals(2)
-
-        self.algorithm_combo = QComboBox()
-        algorithms = [
-            ("template_matching", "模板匹配 - 快速精确"),
-            ("ssim", "结构相似性 - 光照鲁棒"),
-            ("feature_matching", "特征匹配 - 形变鲁棒"),
-            ("hybrid", "混合匹配 - 智能选择")
-        ]
-        for algo_id, algo_name in algorithms:
-            self.algorithm_combo.addItem(algo_name, algo_id)
-        self.algorithm_combo.setCurrentText("混合匹配 - 智能选择")
-
-        self.wait_after_spin = QSpinBox()
-        self.wait_after_spin.setRange(0, 10000)
-        self.wait_after_spin.setValue(2000)
-        self.wait_after_spin.setSuffix(" ms")
-
-        match_layout.addRow("匹配阈值:", self.threshold_spin)
-        match_layout.addRow("匹配算法:", self.algorithm_combo)
-        match_layout.addRow("执行后等待:", self.wait_after_spin)
-        layout.addWidget(match_group)
-
-        # 按钮
-        button_layout = QHBoxLayout()
-
-        test_btn = QPushButton("测试匹配")
-        test_btn.clicked.connect(self.test_matching)
-
-        ok_btn = QPushButton("确定")
-        ok_btn.clicked.connect(self.accept)
-
-        cancel_btn = QPushButton("取消")
-        cancel_btn.clicked.connect(self.reject)
-
-        button_layout.addWidget(test_btn)
-        button_layout.addStretch()
-        button_layout.addWidget(ok_btn)
-        button_layout.addWidget(cancel_btn)
-
-        layout.addLayout(button_layout)
-
-    def test_matching(self):
-        """测试匹配功能"""
-        # 生成临时参考图像名称
-        area_name = self.name_edit.text() or f"area_{datetime.now().strftime('%H%M%S')}"
-        reference_image_name = f"{area_name}.png"
-
-        # 检查参考图像路径
-        template_name = self.parent().template_name_edit.text() or "unnamed_template"
-        reference_image_path = os.path.join(
-            self.parent().template_manager.images_dir,
-            template_name,
-            reference_image_name
-        )
-
-        # 如果参考图像不存在，先保存当前区域图像
-        if not os.path.exists(reference_image_path):
-            if hasattr(self.parent(), 'current_screenshot') and self.parent().current_screenshot is not None:
-                # 保存参考图像
-                self.parent().save_reference_image(self.area_coords, area_name)
-                QMessageBox.information(self, "提示", f"已保存参考图像: {reference_image_name}")
-            else:
-                QMessageBox.warning(self, "错误", "请先截取游戏界面")
-                return
-
-        # 显示匹配测试对话框
-        test_dialog = MatchingTestDialog(self.area_coords, reference_image_path, self.parent())
-        test_dialog.exec()
-
-    def get_area_data(self):
-        """获取区域数据"""
-        return {
-            'name': self.name_edit.text() or "未命名区域",
-            'action_type': self.action_combo.currentText(),
-            'match_threshold': self.threshold_spin.value(),
-            'match_algorithm': self.algorithm_combo.currentText(),
-            'x': self.area_coords['x'],
-            'y': self.area_coords['y'],
-            'width': self.area_coords['width'],
-            'height': self.area_coords['height']
-        }
-
-    def load_area_data(self, area_data):
-        """加载区域数据"""
-        self.name_edit.setText(area_data.get('name', ''))
-
-        action_type = area_data.get('action_type', 'image_verify_and_click')
-        index = self.action_combo.findText(action_type)
-        if index >= 0:
-            self.action_combo.setCurrentIndex(index)
-
-        self.threshold_spin.setValue(area_data.get('match_threshold', 0.85))
-
-        algorithm = area_data.get('match_algorithm', 'hybrid')
-        index = self.algorithm_combo.findText(algorithm)
-        if index >= 0:
-            self.algorithm_combo.setCurrentIndex(index)
-
 class MenuButton(QPushButton):
     """自定义菜单按钮"""
     def __init__(self, text, icon_text="", parent=None):
@@ -1271,433 +1143,6 @@ class MenuButton(QPushButton):
                 border-left: 4px solid #1976D2;
             }
         """)
-
-
-class MatchingTestDialog(QDialog):
-    """匹配测试对话框 - 专门用于测试图像匹配功能"""
-
-    def __init__(self, area_coords, reference_image_path, parent=None):
-        super().__init__(parent)
-        self.area_coords = area_coords
-        self.reference_image_path = reference_image_path
-        self.parent_window = parent
-        self.image_matcher = ImageMatcher()
-        self.window_controller = GameWindowController()
-        self.test_results = []
-        self.continuous_testing = False
-        self.init_ui()
-
-    def init_ui(self):
-        self.setWindowTitle("图像匹配测试")
-        self.setModal(True)
-        self.resize(800, 700)
-
-        layout = QVBoxLayout(self)
-
-        # 测试配置区域
-        config_group = QGroupBox("测试配置")
-        config_layout = QFormLayout(config_group)
-
-        # 匹配算法选择
-        self.algorithm_combo = QComboBox()
-        algorithms = [
-            ("template_matching", "模板匹配 - 快速精确"),
-            ("ssim", "结构相似性 - 光照鲁棒"),
-            ("feature_matching", "特征匹配 - 形变鲁棒"),
-            ("hybrid", "混合匹配 - 智能选择")
-        ]
-        for algo_id, algo_name in algorithms:
-            self.algorithm_combo.addItem(algo_name, algo_id)
-        self.algorithm_combo.setCurrentText("混合匹配 - 智能选择")
-
-        # 匹配阈值
-        self.threshold_spin = QDoubleSpinBox()
-        self.threshold_spin.setRange(0.1, 1.0)
-        self.threshold_spin.setSingleStep(0.05)
-        self.threshold_spin.setValue(0.85)
-        self.threshold_spin.setDecimals(2)
-
-        # 测试次数
-        self.test_count_spin = QSpinBox()
-        self.test_count_spin.setRange(1, 10)
-        self.test_count_spin.setValue(3)
-
-        # 实时截图
-        self.realtime_check = QCheckBox("实时截图测试")
-        self.realtime_check.setChecked(True)
-        self.realtime_check.setToolTip("每次测试都重新截图，模拟真实使用场景")
-
-        config_layout.addRow("匹配算法:", self.algorithm_combo)
-        config_layout.addRow("匹配阈值:", self.threshold_spin)
-        config_layout.addRow("测试次数:", self.test_count_spin)
-        config_layout.addRow("", self.realtime_check)
-
-        layout.addWidget(config_group)
-
-        # 图像预览区域
-        preview_group = QGroupBox("图像预览")
-        preview_layout = QHBoxLayout(preview_group)
-
-        # 当前截图预览
-        current_layout = QVBoxLayout()
-        current_layout.addWidget(QLabel("当前截图:"))
-        self.current_preview = QLabel()
-        self.current_preview.setFixedSize(200, 150)
-        self.current_preview.setStyleSheet("border: 2px solid #ccc; background-color: #f9f9f9;")
-        self.current_preview.setScaledContents(True)
-        self.current_preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        current_layout.addWidget(self.current_preview)
-
-        # 参考图像预览
-        reference_layout = QVBoxLayout()
-        reference_layout.addWidget(QLabel("参考图像:"))
-        self.reference_preview = QLabel()
-        self.reference_preview.setFixedSize(200, 150)
-        self.reference_preview.setStyleSheet("border: 2px solid #ccc; background-color: #f9f9f9;")
-        self.reference_preview.setScaledContents(True)
-        self.reference_preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        reference_layout.addWidget(self.reference_preview)
-
-        # 差异图像预览
-        diff_layout = QVBoxLayout()
-        diff_layout.addWidget(QLabel("差异分析:"))
-        self.diff_preview = QLabel()
-        self.diff_preview.setFixedSize(200, 150)
-        self.diff_preview.setStyleSheet("border: 2px solid #ccc; background-color: #f9f9f9;")
-        self.diff_preview.setScaledContents(True)
-        self.diff_preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        diff_layout.addWidget(self.diff_preview)
-
-        preview_layout.addLayout(current_layout)
-        preview_layout.addLayout(reference_layout)
-        preview_layout.addLayout(diff_layout)
-
-        layout.addWidget(preview_group)
-
-        # 测试结果区域
-        results_group = QGroupBox("测试结果")
-        results_layout = QVBoxLayout(results_group)
-
-        # 结果统计
-        self.stats_label = QLabel("等待测试...")
-        self.stats_label.setStyleSheet("font-weight: bold; color: #666;")
-        results_layout.addWidget(self.stats_label)
-
-        # 详细结果
-        self.results_text = QTextEdit()
-        self.results_text.setReadOnly(True)
-        self.results_text.setMaximumHeight(200)
-        results_layout.addWidget(self.results_text)
-
-        layout.addWidget(results_group)
-
-        # 按钮区域
-        button_layout = QHBoxLayout()
-
-        self.start_test_btn = QPushButton("开始测试")
-        self.start_test_btn.clicked.connect(self.start_test)
-        self.start_test_btn.setStyleSheet("QPushButton { background-color: #4CAF50; color: white; font-weight: bold; padding: 10px; }")
-
-        self.continuous_test_btn = QPushButton("连续测试")
-        self.continuous_test_btn.clicked.connect(self.start_continuous_test)
-        self.continuous_test_btn.setStyleSheet("QPushButton { background-color: #2196F3; color: white; font-weight: bold; padding: 10px; }")
-
-        self.stop_test_btn = QPushButton("停止测试")
-        self.stop_test_btn.clicked.connect(self.stop_test)
-        self.stop_test_btn.setEnabled(False)
-        self.stop_test_btn.setStyleSheet("QPushButton { background-color: #f44336; color: white; font-weight: bold; padding: 10px; }")
-
-        self.close_btn = QPushButton("关闭")
-        self.close_btn.clicked.connect(self.close)
-
-        button_layout.addWidget(self.start_test_btn)
-        button_layout.addWidget(self.continuous_test_btn)
-        button_layout.addWidget(self.stop_test_btn)
-        button_layout.addStretch()
-        button_layout.addWidget(self.close_btn)
-
-        layout.addLayout(button_layout)
-
-        # 加载参考图像
-        self.load_reference_image()
-
-        # 初始化定时器（用于连续测试）
-        self.test_timer = QTimer()
-        self.test_timer.timeout.connect(self.run_single_test)
-
-    def load_reference_image(self):
-        """加载并显示参考图像"""
-        try:
-            reference_image = self.image_matcher.load_reference_image(self.reference_image_path)
-            if reference_image is not None:
-                self.reference_image_cv = reference_image
-                self.show_image_in_label(reference_image, self.reference_preview)
-                self.log_message("✓ 参考图像加载成功")
-            else:
-                self.log_message("✗ 参考图像加载失败", "error")
-        except Exception as e:
-            self.log_message(f"✗ 加载参考图像时出错: {e}", "error")
-
-    def start_test(self):
-        """开始单次测试"""
-        self.start_test_btn.setEnabled(False)
-        self.continuous_test_btn.setEnabled(False)
-        self.stop_test_btn.setEnabled(True)
-
-        self.results_text.clear()
-        self.test_results.clear()
-
-        test_count = self.test_count_spin.value()
-        self.log_message(f"开始匹配测试，共 {test_count} 次...")
-
-        try:
-            for i in range(test_count):
-                self.log_message(f"\n--- 第 {i+1} 次测试 ---")
-                result = self.run_single_test()
-                if result:
-                    self.test_results.append(result)
-
-                # 处理事件，更新界面
-                QApplication.processEvents()
-
-                if not self.stop_test_btn.isEnabled():  # 用户停止了测试
-                    break
-
-                if i < test_count - 1:  # 不是最后一次测试
-                    import time
-                    time.sleep(0.5)  # 短暂延迟
-
-            self.show_test_summary()
-
-        except Exception as e:
-            self.log_message(f"测试异常: {e}", "error")
-        finally:
-            self.start_test_btn.setEnabled(True)
-            self.continuous_test_btn.setEnabled(True)
-            self.stop_test_btn.setEnabled(False)
-
-    def start_continuous_test(self):
-        """开始连续测试"""
-        self.continuous_testing = True
-        self.start_test_btn.setEnabled(False)
-        self.continuous_test_btn.setEnabled(False)
-        self.stop_test_btn.setEnabled(True)
-
-        self.results_text.clear()
-        self.test_results.clear()
-
-        self.log_message("开始连续匹配测试...")
-        self.log_message("每2秒进行一次测试，点击'停止测试'结束")
-
-        # 启动定时器，每2秒测试一次
-        self.test_timer.start(2000)
-
-    def stop_test(self):
-        """停止测试"""
-        self.continuous_testing = False
-        self.test_timer.stop()
-
-        self.start_test_btn.setEnabled(True)
-        self.continuous_test_btn.setEnabled(True)
-        self.stop_test_btn.setEnabled(False)
-
-        self.log_message("\n测试已停止", "warning")
-        if self.test_results:
-            self.show_test_summary()
-
-    def run_single_test(self):
-        """运行单次测试"""
-        try:
-            # 获取当前截图
-            if self.realtime_check.isChecked():
-                # 实时截图
-                if not self.capture_current_area():
-                    return None
-
-            # 获取测试参数
-            algorithm = self.algorithm_combo.currentData()
-            threshold = self.threshold_spin.value()
-
-            # 进行匹配测试
-            if hasattr(self, 'current_image_cv') and hasattr(self, 'reference_image_cv'):
-                is_match, similarity = self.image_matcher.match_images(
-                    self.current_image_cv, self.reference_image_cv, algorithm, threshold
-                )
-
-                # 记录结果
-                result = {
-                    'algorithm': algorithm,
-                    'threshold': threshold,
-                    'similarity': similarity,
-                    'is_match': is_match,
-                    'timestamp': datetime.now().strftime("%H:%M:%S")
-                }
-
-                # 显示结果
-                status = "✓ 匹配" if is_match else "✗ 失败"
-                color = "success" if is_match else "error"
-                self.log_message(f"{result['timestamp']} | {algorithm} | {similarity:.3f} | {status}", color)
-
-                # 生成差异图像
-                self.generate_diff_image()
-
-                return result
-            else:
-                self.log_message("图像数据不完整", "error")
-                return None
-
-        except Exception as e:
-            self.log_message(f"测试出错: {e}", "error")
-            return None
-
-    def capture_current_area(self):
-        """截取当前区域图像"""
-        try:
-            # 查找并激活微信窗口
-            wechat_window = self.window_controller.find_wechat_window()
-            if not wechat_window:
-                self.log_message("未找到微信窗口", "error")
-                return False
-
-            if not self.window_controller.activate_window():
-                self.log_message("无法激活微信窗口", "error")
-                return False
-
-            # 截取窗口截图
-            screenshot = self.window_controller.capture_window_screenshot()
-            if screenshot is None:
-                self.log_message("截图失败", "error")
-                return False
-
-            # 提取指定区域
-            x, y, w, h = (self.area_coords['x'], self.area_coords['y'],
-                          self.area_coords['width'], self.area_coords['height'])
-
-            if (x + w > screenshot.shape[1] or y + h > screenshot.shape[0] or
-                    x < 0 or y < 0):
-                self.log_message("区域坐标超出截图范围", "error")
-                return False
-
-            self.current_image_cv = screenshot[y:y+h, x:x+w]
-            self.show_image_in_label(self.current_image_cv, self.current_preview)
-
-            return True
-
-        except Exception as e:
-            self.log_message(f"截取区域图像时出错: {e}", "error")
-            return False
-
-    def generate_diff_image(self):
-        """生成差异图像"""
-        try:
-            if hasattr(self, 'current_image_cv') and hasattr(self, 'reference_image_cv'):
-                # 确保两个图像尺寸一致
-                current = self.current_image_cv.copy()
-                reference = self.reference_image_cv.copy()
-
-                if current.shape != reference.shape:
-                    reference = cv2.resize(reference, (current.shape[1], current.shape[0]))
-
-                # 计算差异
-                diff = cv2.absdiff(current, reference)
-
-                # 增强差异显示
-                diff_enhanced = cv2.convertScaleAbs(diff, alpha=3.0, beta=0)
-
-                # 显示差异图像
-                self.show_image_in_label(diff_enhanced, self.diff_preview)
-
-        except Exception as e:
-            self.log_message(f"生成差异图像时出错: {e}", "error")
-
-    def show_image_in_label(self, cv_image, label):
-        """在标签中显示图像"""
-        try:
-            # 转换为RGB
-            if len(cv_image.shape) == 3:
-                rgb_image = cv2.cvtColor(cv_image, cv2.COLOR_BGR2RGB)
-            else:
-                rgb_image = cv_image
-
-            # 转换为Qt格式
-            height, width = rgb_image.shape[:2]
-            if len(rgb_image.shape) == 3:
-                bytes_per_line = 3 * width
-                q_image = QImage(rgb_image.data, width, height, bytes_per_line, QImage.Format.Format_RGB888)
-            else:
-                bytes_per_line = width
-                q_image = QImage(rgb_image.data, width, height, bytes_per_line, QImage.Format.Format_Grayscale8)
-
-            pixmap = QPixmap.fromImage(q_image)
-            label.setPixmap(pixmap)
-
-        except Exception as e:
-            self.log_message(f"显示图像时出错: {e}", "error")
-
-    def show_test_summary(self):
-        """显示测试摘要"""
-        if not self.test_results:
-            return
-
-        total_tests = len(self.test_results)
-        successful_tests = sum(1 for r in self.test_results if r['is_match'])
-        success_rate = (successful_tests / total_tests) * 100
-
-        # 计算平均相似度
-        avg_similarity = sum(r['similarity'] for r in self.test_results) / total_tests
-
-        # 找到最佳和最差结果
-        best_result = max(self.test_results, key=lambda x: x['similarity'])
-        worst_result = min(self.test_results, key=lambda x: x['similarity'])
-
-        # 更新统计标签
-        stats_text = f"测试完成: {successful_tests}/{total_tests} 成功 ({success_rate:.1f}%) | 平均相似度: {avg_similarity:.3f}"
-        self.stats_label.setText(stats_text)
-
-        # 显示详细摘要
-        self.log_message("\n" + "="*50, "info")
-        self.log_message("测试摘要", "info")
-        self.log_message("="*50, "info")
-        self.log_message(f"总测试次数: {total_tests}", "info")
-        self.log_message(f"成功次数: {successful_tests}", "success")
-        self.log_message(f"失败次数: {total_tests - successful_tests}", "error")
-        self.log_message(f"成功率: {success_rate:.1f}%", "info")
-        self.log_message(f"平均相似度: {avg_similarity:.3f}", "info")
-        self.log_message(f"最高相似度: {best_result['similarity']:.3f} ({best_result['timestamp']})", "success")
-        self.log_message(f"最低相似度: {worst_result['similarity']:.3f} ({worst_result['timestamp']})", "warning")
-
-        # 提供建议
-        if success_rate < 50:
-            self.log_message("\n💡 建议:", "warning")
-            self.log_message("• 成功率较低，考虑重新标记区域", "warning")
-            self.log_message("• 或者降低匹配阈值", "warning")
-        elif success_rate < 80:
-            self.log_message("\n💡 建议:", "info")
-            self.log_message(f"• 可以将阈值调整为 {avg_similarity - 0.05:.2f}", "info")
-        else:
-            self.log_message("\n🎉 测试结果良好！", "success")
-
-    def log_message(self, message, level="info"):
-        """记录消息"""
-        color_map = {
-            "info": "#333333",
-            "success": "#4CAF50",
-            "warning": "#FF9800",
-            "error": "#f44336"
-        }
-
-        color = color_map.get(level, "#333333")
-        formatted_message = f'<span style="color: {color};">{message}</span>'
-
-        self.results_text.append(formatted_message)
-
-        # 滚动到底部
-        scrollbar = self.results_text.verticalScrollBar()
-        scrollbar.setValue(scrollbar.maximum())
-
-        # 处理事件以更新界面
-        QApplication.processEvents()
-
 
 class MainGUI(QMainWindow):
     def __init__(self):
@@ -2726,7 +2171,7 @@ class MainGUI(QMainWindow):
             try:
                 # 删除模板文件
                 if 'filename' in template_data:
-                    template_path = os.path.join("templates", template_data['filename'])
+                    template_path = os.path.join(TEMPLATES_PATH, template_data['filename'])
                     if os.path.exists(template_path):
                         os.remove(template_path)
 
@@ -2737,76 +2182,6 @@ class MainGUI(QMainWindow):
             except Exception as e:
                 QMessageBox.critical(self, "错误", f"删除模板失败: {str(e)}")
 
-    def take_screenshot(self):
-        """截取游戏界面"""
-        self.statusBar().showMessage("正在截取游戏界面...")
-
-        try:
-            # 查找微信窗口
-            wechat_window = self.window_controller.find_wechat_window()
-            if not wechat_window:
-                QMessageBox.warning(self, "错误", "未找到微信窗口，请确保微信已启动")
-                self.statusBar().showMessage("截图失败")
-                return
-
-            # 激活窗口
-            if not self.window_controller.activate_window():
-                QMessageBox.warning(self, "错误", "无法激活微信窗口")
-                self.statusBar().showMessage("截图失败")
-                return
-
-            # 截取截图
-            screenshot = self.window_controller.capture_window_screenshot()
-            if screenshot is not None:
-                self.current_screenshot = screenshot
-                self.display_screenshot(screenshot)
-                self.statusBar().showMessage("截图成功")
-            else:
-                QMessageBox.warning(self, "错误", "截图失败")
-                self.statusBar().showMessage("截图失败")
-
-        except Exception as e:
-            QMessageBox.critical(self, "错误", f"截图时出错: {str(e)}")
-            self.statusBar().showMessage("截图失败")
-
-    def display_screenshot(self, screenshot):
-        """显示截图"""
-        try:
-            # 转换为Qt格式
-            height, width, channel = screenshot.shape
-            bytes_per_line = 3 * width
-            q_image = QImage(screenshot.data, width, height, bytes_per_line, QImage.Format.Format_RGB888).rgbSwapped()
-
-            # 缩放以适应预览区域
-            pixmap = QPixmap.fromImage(q_image)
-            scaled_pixmap = pixmap.scaled(
-                self.preview_label.size(),
-                Qt.AspectRatioMode.KeepAspectRatio,
-                Qt.TransformationMode.SmoothTransformation
-            )
-
-            self.preview_label.setPixmap(scaled_pixmap)
-
-        except Exception as e:
-            print(f"显示截图时出错: {e}")
-
-    def launch_creator_wizard(self):
-        """启动创建向导"""
-        template_name = self.template_name_edit.text().strip()
-        game_name = self.game_name_edit.text().strip()
-
-        if not template_name:
-            QMessageBox.warning(self, "提示", "请先填写模板名称")
-            return
-
-        if not self.current_screenshot is not None:
-            QMessageBox.warning(self, "提示", "请先截取游戏界面")
-            return
-
-        # 启动创建向导
-        wizard = TemplateCreatorWizard(template_name, game_name, self.current_screenshot, self)
-        wizard.exec()
-
     def launch_advanced_creator(self, template_file=None):
         """切换到集成的创建工具"""
         # 切换到模板创建页面
@@ -2815,200 +2190,15 @@ class MainGUI(QMainWindow):
         # 如果指定了模板文件，加载它
         if template_file:
             try:
-                template_path = os.path.join("templates", template_file)
+                template_path = os.path.join(TEMPLATES_PATH, template_file)
                 if os.path.exists(template_path):
                     template = self.template_manager.load_template(template_path)
                     if template and hasattr(self, 'integrated_creator'):
                         self.integrated_creator.load_template_data(template)
+                        self.current_template = template
             except Exception as e:
                 QMessageBox.critical(self, "错误", f"加载模板失败: {str(e)}")
 
-class TemplateExecutionDialog(QDialog):
-    """模板执行对话框"""
-
-    def __init__(self, template_data, executor, parent=None):
-        super().__init__(parent)
-        self.template_data = template_data
-        self.executor = executor
-        self.init_ui()
-
-    def init_ui(self):
-        self.setWindowTitle(f"执行模板: {self.template_data.get('name', '未知模板')}")
-        self.setModal(True)
-        self.resize(600, 400)
-
-        layout = QVBoxLayout(self)
-
-        # 执行信息
-        info_label = QLabel(f"正在执行模板: {self.template_data.get('name', '未知模板')}")
-        info_label.setStyleSheet("font-size: 16px; font-weight: bold; margin-bottom: 20px;")
-        layout.addWidget(info_label)
-
-        # 进度显示
-        self.progress_bar = QProgressBar()
-        self.progress_bar.setRange(0, 0)  # 不确定进度
-        layout.addWidget(self.progress_bar)
-
-        # 日志显示
-        self.log_text = QTextEdit()
-        self.log_text.setReadOnly(True)
-        layout.addWidget(self.log_text)
-
-        # 按钮
-        button_layout = QHBoxLayout()
-
-        self.close_btn = QPushButton("关闭")
-        self.close_btn.clicked.connect(self.close)
-        self.close_btn.setEnabled(False)
-
-        button_layout.addStretch()
-        button_layout.addWidget(self.close_btn)
-
-        layout.addLayout(button_layout)
-
-        # 开始执行
-        QTimer.singleShot(500, self.start_execution)
-
-    def start_execution(self):
-        """开始执行模板"""
-        self.log_text.append("开始执行模板...")
-
-        try:
-            # 这里应该调用实际的执行逻辑
-            template_file = self.template_data.get('filename')
-            if template_file:
-                template_path = os.path.join("templates", template_file)
-                success = self.executor.execute_template(template_path)
-
-                if success:
-                    self.log_text.append("✅ 模板执行成功！")
-                else:
-                    self.log_text.append("❌ 模板执行失败！")
-            else:
-                self.log_text.append("❌ 模板文件不存在！")
-
-        except Exception as e:
-            self.log_text.append(f"❌ 执行异常: {str(e)}")
-
-        finally:
-            self.progress_bar.setRange(0, 1)
-            self.progress_bar.setValue(1)
-            self.close_btn.setEnabled(True)
-
-class ReportViewerDialog(QDialog):
-    """报告查看对话框"""
-
-    def __init__(self, template_data, parent=None):
-        super().__init__(parent)
-        self.template_data = template_data
-        self.init_ui()
-
-    def init_ui(self):
-        self.setWindowTitle(f"报告查看: {self.template_data.get('name', '未知模板')}")
-        self.setModal(True)
-        self.resize(800, 600)
-
-        layout = QVBoxLayout(self)
-
-        # 报告列表
-        self.report_list = QListWidget()
-        layout.addWidget(self.report_list)
-
-        # 按钮
-        button_layout = QHBoxLayout()
-
-        view_btn = QPushButton("查看报告")
-        view_btn.clicked.connect(self.view_selected_report)
-
-        refresh_btn = QPushButton("刷新")
-        refresh_btn.clicked.connect(self.refresh_reports)
-
-        close_btn = QPushButton("关闭")
-        close_btn.clicked.connect(self.close)
-
-        button_layout.addWidget(view_btn)
-        button_layout.addWidget(refresh_btn)
-        button_layout.addStretch()
-        button_layout.addWidget(close_btn)
-
-        layout.addLayout(button_layout)
-
-        # 加载报告
-        self.refresh_reports()
-
-    def refresh_reports(self):
-        """刷新报告列表"""
-        self.report_list.clear()
-
-        # 查找报告文件
-        reports_dir = "reports"
-        if os.path.exists(reports_dir):
-            for filename in os.listdir(reports_dir):
-                if filename.endswith('.html'):
-                    self.report_list.addItem(filename)
-
-        if self.report_list.count() == 0:
-            item = QListWidgetItem("暂无执行报告")
-            item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsSelectable)
-            self.report_list.addItem(item)
-
-    def view_selected_report(self):
-        """查看选中的报告"""
-        current_item = self.report_list.currentItem()
-        if not current_item:
-            return
-
-        report_file = current_item.text()
-        report_path = os.path.join("reports", report_file)
-
-        if os.path.exists(report_path):
-            # 在默认浏览器中打开报告
-            import webbrowser
-            webbrowser.open(f"file://{os.path.abspath(report_path)}")
-
-class TemplateCreatorWizard(QDialog):
-    """模板创建向导"""
-
-    def __init__(self, template_name, game_name, screenshot, parent=None):
-        super().__init__(parent)
-        self.template_name = template_name
-        self.game_name = game_name
-        self.screenshot = screenshot
-        self.init_ui()
-
-    def init_ui(self):
-        self.setWindowTitle("模板创建向导")
-        self.setModal(True)
-        self.resize(800, 600)
-
-        layout = QVBoxLayout(self)
-
-        info_label = QLabel("模板创建向导功能正在开发中...")
-        info_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        info_label.setStyleSheet("font-size: 18px; color: #666;")
-
-        layout.addWidget(info_label)
-
-        # 临时按钮
-        temp_btn = QPushButton("启动完整创建工具")
-        temp_btn.clicked.connect(self.launch_full_creator)
-        layout.addWidget(temp_btn)
-
-        close_btn = QPushButton("关闭")
-        close_btn.clicked.connect(self.close)
-        layout.addWidget(close_btn)
-
-    def launch_full_creator(self):
-        """启动完整创建工具"""
-        try:
-            from template_creator_gui import TemplateCreatorGUI
-
-            self.creator_window = TemplateCreatorGUI()
-            self.creator_window.show()
-            self.close()
-
-        except Exception as e:
-            QMessageBox.critical(self, "错误", f"启动创建工具失败: {str(e)}")
 
 def main():
     """主函数"""

@@ -6,7 +6,7 @@ import sys
 import os
 
 # 添加src目录到Python路径
-src_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'src')
+src_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'gui')
 sys.path.insert(0, src_path)
 
 def test_template_test_dialog():
@@ -15,8 +15,8 @@ def test_template_test_dialog():
     
     try:
         from PyQt6.QtWidgets import QApplication
-        from src.template_creator_gui import TemplateTestDialog
-        from src.template_manager import TemplateManager
+        from gui.template_creator_gui import TemplateTestDialog
+        from gui.core.template_manager import TemplateManager
         
         app = QApplication(sys.argv)
         
@@ -61,7 +61,7 @@ def test_area_test_dialog():
     
     try:
         from PyQt6.QtWidgets import QApplication
-        from src.template_creator_gui import AreaTestDialog
+        from gui.template_creator_gui import AreaTestDialog
         import numpy as np
         
         app = QApplication(sys.argv)
@@ -93,7 +93,7 @@ def test_dry_run_mode():
     print("测试模拟运行模式...")
     
     try:
-        from src.game_executor import GameExecutor
+        from gui.core.game_executor import GameExecutor
         
         executor = GameExecutor()
         
@@ -119,7 +119,7 @@ def test_image_matcher_algorithms():
     print("测试图像匹配算法...")
     
     try:
-        from src.image_matcher import ImageMatcher
+        from gui.core.image_matcher import ImageMatcher
         import numpy as np
         import cv2
         
@@ -158,7 +158,7 @@ def test_enhanced_gui_features():
         print("✓ PyQt6 可用")
         
         # 检查GUI模块是否可导入
-        from src.template_creator_gui import TemplateCreatorGUI, TemplateTestDialog, AreaTestDialog
+        from gui.template_creator_gui import TemplateCreatorGUI, TemplateTestDialog, AreaTestDialog
         print("✓ GUI模块导入成功")
         
         # 检查关键方法是否存在

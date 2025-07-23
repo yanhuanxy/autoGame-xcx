@@ -7,7 +7,7 @@ import numpy as np
 import pyclipper
 from shapely.geometry import Polygon
 import onnxruntime as rt
-from core.opencv_util import CvTool
+from util.opencv_util import CvTool
 
 class DGOCRDetection:
     def __init__(

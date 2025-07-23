@@ -10,7 +10,7 @@ import os
 import numpy as np
 import onnxruntime as rt
 import cv2
-from core.opencv_util import CvTool
+from util.opencv_util import CvTool
 
 class DGOCRRecognition:
     def __init__(

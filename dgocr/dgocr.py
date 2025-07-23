@@ -15,7 +15,7 @@ from .det import DGOCRDetection
 from .det_seglink import SegLinkOCRDetection
 from .visual import draw_ocr_box_txt
 from .utils import crop_image, order_point, preprocess, postprocess
-from core.opencv_util import CvTool
+from util.opencv_util import CvTool
 
 class DGOCR:
     def __init__(

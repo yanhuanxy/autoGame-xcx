@@ -2,13 +2,13 @@
 基础测试
 """
 import sys
-sys.path.append('src')
+sys.path.append('../gui')
 
 print("开始基础测试...")
 
 try:
     print("1. 导入模块...")
-    from src.coordinate_converter import CoordinateConverter
+    from gui.core.coordinate_converter import CoordinateConverter
     print("   ✓ 导入成功")
     
     print("2. 创建实例...")

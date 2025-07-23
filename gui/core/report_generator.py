@@ -9,8 +9,11 @@ from datetime import datetime
 import cv2
 import numpy as np
 
+from util.constants import REPORTS_PATH
+
+
 class ReportGenerator:
-    def __init__(self, reports_dir="reports"):
+    def __init__(self, reports_dir=REPORTS_PATH):
         self.reports_dir = reports_dir
         self._ensure_directory()
     

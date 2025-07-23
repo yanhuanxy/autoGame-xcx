@@ -6,10 +6,12 @@ import sys
 import os
 import cv2
 import numpy as np
-from core.opencv_util import CvTool
+
+from util.constants import TEST_IMAGES_PATH
+from util.opencv_util import CvTool
 
 # 添加src目录到Python路径
-src_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'src')
+src_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'gui')
 sys.path.insert(0, src_path)
 
 def create_test_images():
@@ -17,7 +19,7 @@ def create_test_images():
     print("创建测试图像...")
     
     # 创建测试目录
-    test_dir = "test_images"
+    test_dir = TEST_IMAGES_PATH
     if not os.path.exists(test_dir):
         os.makedirs(test_dir)
     
@@ -51,7 +53,7 @@ def test_image_matcher():
     print("\n测试图像匹配器...")
     
     try:
-        from src.image_matcher import ImageMatcher
+        from gui.core.image_matcher import ImageMatcher
         
         matcher = ImageMatcher()
         

@@ -11,12 +11,13 @@ from PIL import ImageGrab
 import os
 from datetime import datetime
 
-from window_controller import GameWindowController
-from image_matcher import ImageMatcher
-from coordinate_converter import CoordinateConverter
-from template_manager import TemplateManager
-from report_generator import ReportGenerator
-from core.opencv_util import CvTool
+from gui.core.window_controller import GameWindowController
+from gui.core.image_matcher import ImageMatcher
+from gui.core.coordinate_converter import CoordinateConverter
+from gui.core.template_manager import TemplateManager
+from gui.core.report_generator import ReportGenerator
+from util.constants import REPORTS_PATH
+from util.opencv_util import CvTool
 
 class GameExecutor:
     def __init__(self):
@@ -326,7 +327,7 @@ class GameExecutor:
     def save_execution_report(self):
         """保存执行报告"""
         try:
-            reports_dir = "reports"
+            reports_dir = REPORTS_PATH
             if not os.path.exists(reports_dir):
                 os.makedirs(reports_dir)
             

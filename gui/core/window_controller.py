@@ -13,7 +13,7 @@ import cv2
 import numpy as np
 from PIL import ImageGrab
 import time
-from core.opencv_util import CvTool
+from util.opencv_util import CvTool
 
 class GameWindowController:
     def __init__(self):

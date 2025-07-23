@@ -5,7 +5,7 @@ import sys
 import os
 
 # 添加src目录到Python路径
-src_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'src')
+src_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'gui')
 sys.path.insert(0, src_path)
 
 def test_imports():
@@ -47,7 +47,7 @@ def test_matching_dialog_creation():
     
     try:
         from PyQt6.QtWidgets import QApplication
-        from src.template_creator_gui import MatchingTestDialog
+        from gui.template_creator_gui import MatchingTestDialog
         import numpy as np
         import cv2
         
@@ -113,7 +113,7 @@ def test_image_matcher():
     print("\n测试图像匹配器...")
     
     try:
-        from src.image_matcher import ImageMatcher
+        from gui.core.image_matcher import ImageMatcher
         import numpy as np
         import cv2
         
