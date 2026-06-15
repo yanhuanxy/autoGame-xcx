@@ -1,0 +1,910 @@
+# PLAN_02：ilink SDK 远程驱动
+
+> 项目：`wechat-link-autogame-xcx`
+> 方向：通过 JPype1 集成 `wechat-ilink-sdk-java`，建立"远程用户微信 ↔ Python 自动化"双向通道
+> 预计周期：6 阶段 = 约 2 周（核心链路） + 后续 LLM 编排迭代
+> 前置依赖：方向 1 完成（包结构稳定）
+
+---
+
+## 1. Context（为什么做）
+
+当前项目是单机本地 PyQt6 自动化工具——用户必须在运行 GUI 的电脑前手动操作。这限制了使用场景：
+
+- 出门时无法远程触发自动化
+- 长时间任务跑完无法及时收到通知
+- 多台机器分别跑不同账号时无法统一调度
+- 无法利用大模型做语义化的任务编排（"帮我把日常任务做完"）
+
+父目录 `D:\IDEAGithubWork\wechat-ilink\wechat-ilink-sdk-java` 是一个完整的 ilink 通信 SDK（包名 `com.github.wechat.ilink.sdk`），可以让程序以"机器人"身份登录微信，**接收用户消息**（`OnMessageListener`）并**回发消息**（`MessageService.sendText/sendImage/...`）。
+
+本方向目标：**Python 项目通过 JPype1 集成 ilink SDK jar**，让远程用户在微信中发指令（结构化 `#指令` 或自然语言），Python 解析后调用本地自动化能力（图像/协议策略）执行，结果回传微信。后续接入大模型，把自然语言拆解为指令队列顺序执行。
+
+### 1.1 边界澄清
+
+同级目录的 `wechat-ilink-game`、`wechat-ilink-imoney` 是**与当前项目同级的独立项目**，本规划**不复用其代码**：
+- `wechat-ilink-game`：基于 SDK 的 Java 机器人后端（已有 command 系统、LLM 路由，但是 Java 实现）
+- `wechat-ilink-imoney`：Spring 业务服务（含 imai AI 模块）
+
+当前 Python 项目**只引用** `wechat-ilink-sdk-java` 的 jar 作为通信通道，**自己实现**指令解析、调度、LLM 编排。
+
+### 1.2 应用场景示意
+
+```
+[远程用户手机微信]
+  ↓ 发送 "#run 签到模板"
+[ilink Java SDK] (长轮询接收)
+  ↓ OnMessageListener.onMessages 回调
+[Python 远程驱动层]
+  ├── 解析指令 (#run → 触发模板执行)
+  ├── 调度器入队 (顺序执行避免窗口冲突)
+  ├── 本地执行 (调 core/executor)
+  └── 结果回传
+  ↓ MessageService.sendText
+[远程用户手机微信] 收到 "签到完成：金币+100"
+
+[大模型介入（后续阶段）]
+用户发自然语言："帮我把签到和领体力做了"
+  ↓ LLM 分析
+LLM 拆解为 [#run 签到, #run 领体力]
+  ↓ 顺序执行
+汇总报告 → 微信回发
+```
+
+---
+
+## 2. 现状盘点
+
+### 2.1 ilink SDK 已有能力（仅引用，不修改）
+
+| SDK 组件 | 包路径 | 用途 |
+|---|---|---|
+| `ILinkClientBuilder` | `com.github.wechat.ilink.sdk` | Builder 模式构造 client（config / loginContext / onLogin / onMessage 等） |
+| `ILinkClient` | `com.github.wechat.ilink.sdk` | 客户端实例，`executeLogin()` 返回二维码，`sendText(userId, text)` 发消息 |
+| `MessageService` | `com.github.wechat.ilink.sdk.service` | 消息发送：`sendText / sendImage / sendVoice / sendVideo / sendFile` |
+| `OnMessageListener` | `com.github.wechat.ilink.sdk.core.listener` | 消息接收回调接口：`void onMessages(List<WeixinMessage>)` |
+| `OnLoginListener` | 同上 | 登录结果回调 |
+| `OnHeartbeatListener` | 同上 | 心跳回调 |
+| `OnDisconnectListener` | 同上 | 断线回调 |
+| `WeixinMessage` | `com.github.wechat.ilink.sdk.core.model` | 消息模型：`message_id / message_type / from_user_id / to_user_id / create_time_ms / context_token / item_list` |
+| `MessageItem` | 同上 | 消息内容（text_item / image_item / voice_item / video_item / file_item） |
+| `LoginContext` | `com.github.wechat.ilink.sdk.core.login` | 登录上下文（持久化用） |
+| `ResumeContext` | `com.github.wechat.ilink.sdk.core.context` | 服务重启后恢复客户端实例 |
+
+### 2.2 当前 Python 项目能力（复用对象）
+
+| Python 资产 | 路径（方向 1 后） | 用途 |
+|---|---|---|
+| `GameExecutor` | `core/executor.py` | 触发模板执行的统一入口 |
+| `TemplateManager` | `core/template_manager.py` | 列出/查询可用模板 |
+| `ReportGenerator` | `core/report_generator.py` | 生成执行报告 |
+| `MainGUI` | `ui/main_window.py` | 主窗口（pyqtSignal 信号体系） |
+
+### 2.3 待补足能力
+
+| 能力缺口 | 解决方案 |
+|---|---|
+| Python 调 Java | 引入 JPype1（同进程 JNI） |
+| 接收 SDK 消息回调 | `@JImplement("...OnMessageListener")` 让 Python 类实现 Java 接口 |
+| 跨线程通信（JVM 线程 → Qt 主线程） | pyqtSignal 转发 |
+| 指令解析 | 新增 `remote/commands/` 子包 |
+| 顺序执行（避免窗口冲突） | 新增 `remote/scheduler/` 子包 |
+| 自然语言编排 | 新增 `remote/llm/` 子包（后续阶段） |
+
+---
+
+## 3. 集成方式选型
+
+### 3.1 五方案对比矩阵
+
+| 方案 | 启动开销 | 调用延迟 | 双向回调 | 部署复杂度 | 适用性 |
+|---|---|---|---|---|---|
+| **JPype1** ★推荐 | ~1.5s（一次） | 微秒级（同进程 JNI） | 强（`@JImplement` 直接实现 Java 监听器） | 单进程需 JDK | ✅ 完美匹配 |
+| Py4J（备选） | ~3s（独立进程） | 毫秒级（socket） | 中（需 callback server） | 独立 Java 进程 | ⚠️ 进程隔离需求时 |
+| subprocess + CLI | ~1s/次 | 秒级 | 无 | 极低 | ❌ 无法长轮询接收消息 |
+| gRPC | ~2s | 毫秒级 | 强 | 需 Java 端开发 server | ❌ SDK 是客户端不是 server |
+| HTTP/REST | ~3s | 毫秒级 | 中 | 需 Java Web 框架 | ❌ SDK 不是 Web 应用 |
+
+### 3.2 推荐 JPype1 理由
+
+1. **完美匹配 SDK 模式**：ilink SDK 本质是"长连接客户端 + 监听器回调"，需要 Python 实现 `OnMessageListener` 接收消息——JPype 的 `@JImplement` 让 Python 类直接实现 Java 接口，**是唯一原生支持此模式的方案**。
+2. **零网络开销**：同进程 JNI，消息回调延迟可控在毫秒级。
+3. **PyQt6 共存稳定**：单进程模型，JVM 启动后常驻，与 Qt 事件循环无冲突。
+4. **依赖最小**：仅一个 `jpype1` pip 包；SDK jar 直接通过 classpath 加载，无需 Java 端额外改造。
+
+### 3.3 备选 Py4J 场景
+
+- SDK 频繁崩溃会拖垮 PyQt 应用（JPype 同进程无法隔离）
+- 多 Python 进程需要共享同一个 Java client
+- 团队对 JNI 不信任
+
+---
+
+## 4. 目标目录结构（在方向 1 基础上增量）
+
+```
+src/autogame_xcx/
+├── remote/                              # ★ 新增：远程驱动层（核心）
+│   ├── __init__.py
+│   ├── ilink/                           # ilink SDK 集成
+│   │   ├── __init__.py
+│   │   ├── jvm.py                       # JVM 生命周期（懒加载、atexit 关闭）
+│   │   ├── client.py                    # ILinkClient 包装（登录、sendText 等）
+│   │   ├── message_listener.py          # @JImplement 实现 OnMessageListener
+│   │   ├── login_listener.py            # @JImplement 实现 OnLoginListener
+│   │   └── converters.py                # WeixinMessage/MessageItem ↔ Python dict
+│   │
+│   ├── commands/                        # 指令系统
+│   │   ├── __init__.py
+│   │   ├── parser.py                    # 文本 → ParsedCommand（# 前缀 + 别名表）
+│   │   ├── registry.py                  # 指令注册表 + 别名解析
+│   │   ├── dispatcher.py                # 分发到执行器，结果回传
+│   │   ├── base.py                      # Command 抽象基类 + CommandContext + CommandResult
+│   │   └── definitions/                 # 具体指令实现
+│   │       ├── __init__.py
+│   │       ├── run_template.py          # #run <模板名> 触发模板执行
+│   │       ├── status.py                # #status 查询执行状态
+│   │       ├── stop.py                  # #stop 停止当前任务
+│   │       ├── list_templates.py        # #list 列出可用模板
+│   │       └── report.py                # #report <task_id> 查询报告
+│   │
+│   ├── scheduler/                       # 指令调度
+│   │   ├── __init__.py
+│   │   ├── queue.py                     # 顺序执行队列（线程安全）
+│   │   ├── executor.py                  # 出队执行 + 状态追踪
+│   │   └── state.py                     # 执行状态机（pending/running/done/failed）
+│   │
+│   ├── llm/                             # 大模型编排（后续阶段，预留接口）
+│   │   ├── __init__.py
+│   │   ├── provider.py                  # LlmProvider 抽象基类
+│   │   ├── anthropic_provider.py        # Claude 实现
+│   │   ├── openai_provider.py           # OpenAI 兼容实现
+│   │   ├── orchestrator.py              # 自然语言 → 指令队列编排
+│   │   └── prompt_templates.py          # 系统提示词（含可用指令清单）
+│   │
+│   ├── router.py                        # 消息路由（# 指令 / 自然语言分发）
+│   └── session.py                       # 远程会话（用户白名单、最近上下文）
+│
+├── config/
+│   ├── ilink.py                         # ★ 新增：ilink SDK 配置（jar 路径、登录凭证、心跳）
+│   ├── remote.py                        # ★ 新增：远程控制配置（白名单、指令前缀、超时）
+│   └── llm.py                           # ★ 新增：LLM 配置（API key、模型、温度）
+│
+└── ui/dialogs/
+    ├── remote_status.py                 # ★ 新增：远程连接状态指示灯 + 最近消息
+    └── command_console.py               # ★ 新增：指令执行日志（线程安全显示）
+```
+
+### 4.1 模块职责边界
+
+| 模块 | 职责 | 禁止 |
+|---|---|---|
+| `remote/ilink/` | SDK 集成（JVM 管理、消息收发） | 业务知识 |
+| `remote/commands/` | 指令解析、注册、分发 | 直接操作 SDK 对象（经 ilink/client 抽象） |
+| `remote/scheduler/` | 顺序执行、状态追踪 | 业务逻辑（只调度，不实现） |
+| `remote/llm/` | 自然语言 → 指令队列编排 | 直接执行游戏操作（只生成指令） |
+| `remote/router.py` | 消息分发（指令 vs 自然语言） | 业务实现 |
+| `remote/session.py` | 用户白名单、最近上下文 token | 业务知识 |
+
+### 4.2 依赖方向
+
+```
+ui  →  remote  →  core (executor/template_manager)
+              ↓
+          config (ilink/remote/llm)
+              ↓
+            utils (logger)
+```
+
+---
+
+## 5. 关键模块设计
+
+### 5.1 `remote/ilink/jvm.py`：JVM 生命周期管理
+
+```python
+"""全局唯一 JVM 实例，懒加载，PyQt 退出时优雅关闭。"""
+import threading
+from pathlib import Path
+from typing import Optional
+import jpype
+import jpype.imports
+
+from autogame_xcx.config.ilink import ILinkConfig
+from autogame_xcx.exceptions import AutogameError
+
+
+class JVMManager:
+    _instance: Optional["JVMManager"] = None
+    _lock = threading.Lock()
+
+    def __init__(self, config: ILinkConfig):
+        self.config = config
+        self._started = False
+
+    @classmethod
+    def get(cls, config: Optional[ILinkConfig] = None) -> "JVMManager":
+        with cls._lock:
+            if cls._instance is None:
+                if config is None:
+                    raise AutogameError("JVM not initialized; config required on first call")
+                cls._instance = cls(config)
+            return cls._instance
+
+    def start(self) -> None:
+        if self._started:
+            return
+        if not self.config.jar_path.exists():
+            raise AutogameError(f"ilink SDK jar not found: {self.config.jar_path}")
+        jpype.startJVM(
+            *self.config.jvm_args,
+            classpath=[str(self.config.jar_path)],
+            convertStrings=True,  # Java String 自动转 Python str
+        )
+        self._started = True
+
+    def shutdown(self) -> None:
+        if self._started and jpype.isJVMStarted():
+            jpype.shutdownJVM()
+            self._started = False
+
+    @property
+    def is_started(self) -> bool:
+        return self._started
+```
+
+### 5.2 `remote/ilink/message_listener.py`：核心回调实现
+
+```python
+"""Python 实现 Java 的 OnMessageListener 接口。
+SDK 在 JVM 线程回调 onMessages，不能直接操作 QWidget，
+必须通过 pyqtSignal 转主线程。"""
+from PyQt6.QtCore import QObject, pyqtSignal
+from jpype import JImplement, JOverride
+
+from autogame_xcx.remote.ilink import converters
+
+
+class _SignalCarrier(QObject):
+    """单独的 QObject 持有信号（JImplement 类不能多继承）。"""
+    message_received = pyqtSignal(dict)
+    message_error = pyqtSignal(str)
+
+
+@JImplement("com.github.wechat.ilink.sdk.core.listener.OnMessageListener")
+class PythonMessageListener:
+    """实现 Java 接口，注册到 ILinkClientBuilder.onMessage()。"""
+
+    def __init__(self):
+        self._carrier = _SignalCarrier()
+        self.message_received = self._carrier.message_received
+        self.message_error = self._carrier.message_error
+
+    @JOverride
+    def onMessages(self, messages):  # List<WeixinMessage>
+        import logging
+        logger = logging.getLogger(__name__)
+        try:
+            for msg in messages:
+                py_msg = converters.weixin_to_python(msg)
+                self.message_received.emit(py_msg)
+        except Exception as e:
+            logger.exception("Failed to handle incoming messages")
+            self.message_error.emit(str(e))
+```
+
+### 5.3 `remote/ilink/client.py`：ILinkClient 包装
+
+```python
+"""封装 ILinkClientBuilder + ILinkClient，提供 Python 友好的 API。"""
+import logging
+from typing import Optional
+from autogame_xcx.remote.ilink.jvm import JVMManager
+from autogame_xcx.remote.ilink.message_listener import PythonMessageListener
+from autogame_xcx.remote.ilink.login_listener import PythonLoginListener
+from autogame_xcx.config.ilink import ILinkConfig
+
+logger = logging.getLogger(__name__)
+
+
+class ILinkClient:
+    """Python 端的 ilink 客户端门面。"""
+
+    def __init__(self, config: ILinkConfig):
+        self.config = config
+        self.jvm = JVMManager.get(config)
+        self.message_listener = PythonMessageListener()
+        self.login_listener = PythonLoginListener()
+        self._client = None
+
+    def start(self) -> str:
+        """启动 JVM + 构造 client + 执行登录，返回二维码内容。"""
+        self.jvm.start()
+        if self._client is None:
+            from com.github.wechat.ilink.sdk import ILinkClientBuilder
+            self._client = (
+                ILinkClientBuilder()
+                .config(self.config.to_java())
+                .onMessage(self.message_listener)
+                .onLogin(self.login_listener)
+                .build()
+            )
+        qr_content = self._client.executeLogin()
+        logger.info("ilink client started, QR content returned")
+        return str(qr_content)
+
+    def send_text(self, user_id: str, text: str) -> None:
+        if self._client is None:
+            raise RuntimeError("Client not started")
+        self._client.sendText(user_id, text)
+
+    def send_image(self, user_id: str, image_bytes: bytes, caption: str = "") -> None:
+        if self._client is None:
+            raise RuntimeError("Client not started")
+        self._client.sendImage(user_id, image_bytes, "img.jpg", caption)
+
+    def stop(self) -> None:
+        """优雅停止 client（关闭长轮询）。"""
+        # SDK 暂无显式 stop 方法，shutdownJVM 时自然清理
+        # 后续 SDK 升级提供 stop 时在此调用
+        pass
+```
+
+### 5.4 `remote/ilink/converters.py`：消息对象转换
+
+```python
+"""Java WeixinMessage/MessageItem ↔ Python dict 转换。"""
+from typing import Any
+
+
+def weixin_to_python(msg: Any) -> dict:
+    """转换 com.github.wechat.ilink.sdk.core.model.WeixinMessage 为 dict。"""
+    return {
+        "message_id": int(msg.getMessage_id()) if msg.getMessage_id() else None,
+        "message_type": int(msg.getMessage_type()) if msg.getMessage_type() else None,
+        "from_user_id": str(msg.getFrom_user_id()),
+        "to_user_id": str(msg.getTo_user_id()),
+        "create_time_ms": int(msg.getCreate_time_ms()) if msg.getCreate_time_ms() else None,
+        "context_token": str(msg.getContext_token()) if msg.getContext_token() else None,
+        "items": [message_item_to_python(item) for item in (msg.getItem_list() or [])],
+    }
+
+
+def message_item_to_python(item: Any) -> dict:
+    """转换 MessageItem，提取文本/图像/语音/视频内容。"""
+    result = {"type": int(getattr(item, "getType", lambda: 0)() or 0)}
+    if item.getText_item() is not None:
+        result["text"] = str(item.getText_item().getText())
+    if item.getImage_item() is not None:
+        result["image"] = {"media": str(item.getImage_item().getMedia())}
+    # 其他类型（voice/video/file）按需扩展
+    return result
+```
+
+### 5.5 `remote/commands/base.py`：Command 抽象
+
+```python
+"""Command 抽象基类、上下文、结果。"""
+from abc import ABC, abstractmethod
+from dataclasses import dataclass, field
+from typing import Any, Optional
+
+
+@dataclass
+class CommandContext:
+    """指令执行的上下文。"""
+    user_id: str                         # 微信发送者 ID
+    raw_text: str                        # 原始消息文本
+    executor: Any                        # GameExecutor 实例（用于触发模板）
+    template_manager: Any                # 模板管理器（用于查询可用模板）
+    sender: Any                          # ILinkClient.send_text 回传通道
+    state: dict = field(default_factory=dict)  # 共享状态（如当前 task_id）
+
+
+@dataclass
+class CommandResult:
+    """指令执行结果。"""
+    success: bool
+    message: str = ""                    # 回传给用户的文本
+    payload: Optional[dict] = None       # 结构化数据（日志/报告用）
+
+
+class Command(ABC):
+    """指令基类。每个具体指令（#run / #status / ...）实现一个子类。"""
+    name: str = ""                       # 指令规范名（如 RUN_TEMPLATE）
+    aliases: list[str] = []              # 别名（如 "run"、"执行"）
+    description: str = ""
+    usage: str = ""                      # 用法说明
+
+    @abstractmethod
+    def execute(self, ctx: CommandContext, args: str) -> CommandResult:
+        """执行指令。args 是 #command 后面的所有文本（已 trim）。"""
+        ...
+```
+
+### 5.6 `remote/commands/parser.py`：文本解析
+
+```python
+"""纯文本解析，与 Java 端逻辑解耦。"""
+import re
+from dataclasses import dataclass
+from typing import Optional
+from autogame_xcx.remote.commands.registry import CommandRegistry
+
+
+@dataclass
+class ParsedCommand:
+    name: str                            # 解析后的规范指令名（如 RUN_TEMPLATE）
+    args: str                            # 指令参数（"" 表示无参数）
+    raw: str                             # 原始文本
+
+
+class CommandParser:
+    PREFIX = "#"
+
+    def __init__(self, registry: CommandRegistry):
+        self.registry = registry
+
+    def parse(self, text: str) -> Optional[ParsedCommand]:
+        if not text or not text.startswith(self.PREFIX):
+            return None  # 不是指令，可能走 LLM
+        body = text[len(self.PREFIX):].strip()
+        if not body:
+            return None
+        parts = body.split(maxsplit=1)
+        command_alias = parts[0]
+        args = parts[1].strip() if len(parts) > 1 else ""
+        canonical_name = self.registry.resolve_alias(command_alias)
+        if canonical_name is None:
+            return ParsedCommand(name="UNKNOWN", args=body, raw=text)
+        return ParsedCommand(name=canonical_name, args=args, raw=text)
+```
+
+### 5.7 `remote/commands/registry.py`：注册表
+
+```python
+"""指令注册表 + 别名解析。"""
+from typing import Optional
+from autogame_xcx.remote.commands.base import Command
+
+
+class CommandRegistry:
+    def __init__(self):
+        self._commands: dict[str, Command] = {}
+        self._alias_to_name: dict[str, str] = {}
+
+    def register(self, command: Command) -> None:
+        self._commands[command.name] = command
+        # 注册规范名本身作为别名（大小写不敏感）
+        self._alias_to_name[command.name.lower()] = command.name
+        for alias in command.aliases:
+            self._alias_to_name[alias.lower()] = command.name
+
+    def resolve_alias(self, alias: str) -> Optional[str]:
+        return self._alias_to_name.get(alias.lower())
+
+    def find(self, name: str) -> Optional[Command]:
+        return self._commands.get(name)
+
+    def all_commands(self) -> list[Command]:
+        return list(self._commands.values())
+```
+
+### 5.8 `remote/commands/dispatcher.py`：分发
+
+```python
+"""分发指令到具体 Command 实现，结果回传微信。"""
+import logging
+from autogame_xcx.remote.commands.base import CommandContext, CommandResult
+from autogame_xcx.remote.commands.registry import CommandRegistry
+from autogame_xcx.exceptions import AutogameError
+
+logger = logging.getLogger(__name__)
+
+
+class CommandDispatcher:
+    def __init__(self, registry: CommandRegistry):
+        self.registry = registry
+
+    def dispatch(self, ctx: CommandContext, parsed) -> CommandResult:
+        if parsed.name == "UNKNOWN":
+            return CommandResult(
+                success=False,
+                message=f"未知指令：{parsed.args}\n输入 #help 查看可用指令",
+            )
+        command = self.registry.find(parsed.name)
+        if command is None:
+            return CommandResult(success=False, message=f"指令未注册：{parsed.name}")
+        try:
+            result = command.execute(ctx, parsed.args)
+            return result
+        except AutogameError as e:
+            logger.warning("Command %s failed: %s", parsed.name, e)
+            return CommandResult(success=False, message=f"执行失败：{e}")
+        except Exception as e:
+            logger.exception("Command %s crashed", parsed.name)
+            return CommandResult(success=False, message=f"内部错误：{e}")
+```
+
+### 5.9 `remote/scheduler/queue.py`：顺序执行
+
+```python
+"""单线程消费的指令队列，保证同一时刻只有一个 GameExecutor 实例在跑。
+避免多个远程指令同时触发模板执行导致微信窗口操作冲突。"""
+import threading
+import logging
+from collections import deque
+from typing import Callable, Optional
+
+logger = logging.getLogger(__name__)
+
+
+class CommandQueue:
+    def __init__(self, consumer: Callable):
+        """consumer: 接收 (user_id, parsed_cmd) 并执行。"""
+        self._q: deque = deque()
+        self._lock = threading.Lock()
+        self._cv = threading.Condition(self._lock)
+        self._running = True
+        self._current: Optional[tuple] = None
+        self._consumer = consumer
+        self._worker = threading.Thread(target=self._loop, daemon=True, name="cmd-queue")
+
+    def start(self) -> None:
+        self._worker.start()
+
+    def enqueue(self, user_id: str, parsed_cmd) -> int:
+        """入队，返回当前队列长度（含本次）。"""
+        with self._cv:
+            self._q.append((user_id, parsed_cmd))
+            length = len(self._q)
+            self._cv.notify()
+        logger.info("Enqueued command from %s, queue length=%d", user_id, length)
+        return length
+
+    def stop(self) -> None:
+        with self._cv:
+            self._running = False
+            self._cv.notify_all()
+
+    def _loop(self) -> None:
+        while self._running:
+            with self._cv:
+                while self._running and not self._q:
+                    self._cv.wait()
+                if not self._running:
+                    return
+                self._current = self._q.popleft()
+            user_id, parsed_cmd = self._current
+            try:
+                self._consumer(user_id, parsed_cmd)
+            except Exception:
+                logger.exception("Queue consumer crashed on %s", parsed_cmd)
+            finally:
+                self._current = None
+
+    @property
+    def queue_length(self) -> int:
+        with self._lock:
+            return len(self._q)
+
+    @property
+    def current_running(self) -> Optional[tuple]:
+        return self._current
+```
+
+### 5.10 `remote/router.py`：消息路由
+
+```python
+"""消息路由：# 前缀走指令系统；非 # 走 LLM（后续阶段）。"""
+import logging
+from autogame_xcx.remote.commands.parser import CommandParser
+from autogame_xcx.remote.scheduler.queue import CommandQueue
+from autogame_xcx.remote.session import SessionManager
+
+logger = logging.getLogger(__name__)
+
+
+class MessageRouter:
+    def __init__(
+        self,
+        parser: CommandParser,
+        scheduler: CommandQueue,
+        session: SessionManager,
+        llm_orchestrator=None,  # 阶段 2.5 注入
+    ):
+        self.parser = parser
+        self.scheduler = scheduler
+        self.session = session
+        self.llm_orchestrator = llm_orchestrator
+
+    def route(self, user_id: str, text: str) -> None:
+        if not self.session.is_allowed(user_id):
+            logger.info("Ignored message from non-whitelisted user: %s", user_id)
+            return
+        if text.startswith("#"):
+            parsed = self.parser.parse(text)
+            if parsed is None:
+                return
+            self.scheduler.enqueue(user_id, parsed)
+        else:
+            # 后续阶段：交给 LLM orchestrator 拆解为指令队列
+            if self.llm_orchestrator is None:
+                logger.info("LLM not configured, ignored natural language from %s", user_id)
+                return
+            self.llm_orchestrator.handle_natural_language(user_id, text)
+```
+
+### 5.11 `remote/llm/orchestrator.py`（后续阶段）：自然语言编排
+
+```python
+"""自然语言 → 指令队列编排。
+用户发"帮我把签到和领体力做了"
+  ↓ LLM 分析
+LLM 拆解为 [#run 签到, #run 领体力]
+  ↓ 顺序执行
+汇总报告 → 微信回发
+"""
+import json
+import logging
+from typing import Optional
+
+from autogame_xcx.remote.llm.provider import LlmProvider
+from autogame_xcx.remote.llm.prompt_templates import build_orchestration_prompt
+from autogame_xcx.remote.commands.registry import CommandRegistry
+from autogame_xcx.remote.scheduler.queue import CommandQueue
+
+logger = logging.getLogger(__name__)
+
+
+class LLMOrchestrator:
+    def __init__(
+        self,
+        provider: LlmProvider,
+        registry: CommandRegistry,
+        scheduler: CommandQueue,
+        sender,
+    ):
+        self.provider = provider
+        self.registry = registry
+        self.scheduler = scheduler
+        self.sender = sender
+
+    def handle_natural_language(self, user_id: str, text: str) -> None:
+        try:
+            prompt = build_orchestration_prompt(text, self.registry.all_commands())
+            response = self.provider.chat([{"role": "user", "content": prompt}])
+            commands = self._parse_response(response)
+            if not commands:
+                self.sender.send_text(user_id, "未能理解您的指令，请用 #help 查看可用指令")
+                return
+            for cmd in commands:
+                self.scheduler.enqueue(user_id, cmd)
+            self.sender.send_text(
+                user_id,
+                f"已为您规划 {len(commands)} 个指令，正在顺序执行...",
+            )
+        except Exception as e:
+            logger.exception("LLM orchestration failed")
+            self.sender.send_text(user_id, f"AI 编排失败：{e}")
+
+    def _parse_response(self, response: str) -> list:
+        """解析 LLM 返回的 JSON 指令序列。
+        期望格式：[{"action": "run", "args": "签到"}, ...]"""
+        try:
+            data = json.loads(response)
+            parsed = []
+            for item in data:
+                action = item.get("action", "")
+                args = item.get("args", "")
+                # 转换为 ParsedCommand 入队
+                from autogame_xcx.remote.commands.parser import ParsedCommand
+                parsed.append(ParsedCommand(name=action.upper(), args=args, raw=f"#{action} {args}"))
+            return parsed
+        except (json.JSONDecodeError, KeyError) as e:
+            logger.warning("Failed to parse LLM response: %s", e)
+            return []
+```
+
+### 5.12 `remote/commands/definitions/run_template.py`：示例指令
+
+```python
+"""#run <模板名>：触发本地模板执行。"""
+from autogame_xcx.remote.commands.base import Command, CommandContext, CommandResult
+
+
+class RunTemplateCommand(Command):
+    name = "RUN_TEMPLATE"
+    aliases = ["run", "执行", "运行"]
+    description = "触发指定模板的自动化执行"
+    usage = "#run <模板名>  例如：#run 签到"
+
+    def execute(self, ctx: CommandContext, args: str) -> CommandResult:
+        template_name = args.strip()
+        if not template_name:
+            return CommandResult(success=False, message="用法：" + self.usage)
+        # 查找模板
+        template = ctx.template_manager.find_by_name(template_name)
+        if template is None:
+            available = ctx.template_manager.list_names()
+            return CommandResult(
+                success=False,
+                message=f"模板不存在：{template_name}\n可用模板：{', '.join(available)}",
+            )
+        # 触发执行
+        ctx.sender.send_text(ctx.user_id, f"开始执行模板：{template_name}")
+        success = ctx.executor.execute_template(template["path"])
+        if success:
+            return CommandResult(
+                success=True,
+                message=f"模板执行完成：{template_name}",
+                payload={"template": template_name, "task_id": "..."},
+            )
+        else:
+            return CommandResult(success=False, message=f"模板执行失败：{template_name}")
+```
+
+---
+
+## 6. 迁移路径（分 6 阶段）
+
+### 阶段 2.1：JPype Spike（半天）
+
+**目标**：验证 JPype1 在 Python 3.13 + Windows 环境下能正常启动 JVM 并加载 ilink SDK jar。
+
+**动作**：
+1. `uv add jpype1`
+2. 从 `D:\IDEAGithubWork\wechat-ilink\wechat-ilink-sdk-java\target\` 取构建好的 jar（若无则 `mvn package`）
+3. 放置到 `lib/ilink-sdk.jar`，加入 `.gitignore`（避免大文件入库）
+4. 在 `tests/manual/test_jpype_spike.py` 写最小验证：
+   - 启动 JVM，加载 jar
+   - 调用 `java.lang.System.currentTimeMillis()`
+   - 调用 `ILinkClientBuilder().toString()` 验证类可加载
+   - 关闭 JVM
+
+**验证**：
+- `uv run python tests/manual/test_jpype_spike.py` 输出毫秒时间戳 + Builder.toString() 字符串
+- JVM 启动时间 < 3 秒
+
+### 阶段 2.2：消息接收通道（1~2 天）
+
+**目标**：Python 能通过 SDK 接收微信消息并显示在 GUI。
+
+**动作**：
+1. 实现 `remote/ilink/jvm.py`（JVMManager）
+2. 实现 `remote/ilink/converters.py`（消息转换）
+3. 实现 `remote/ilink/message_listener.py`（PythonMessageListener）
+4. 实现 `remote/ilink/client.py`（ILinkClient 门面）
+5. 在 `_cli.py` 启动时初始化 ILinkClient（可选，根据配置决定是否启用远程）
+6. 在主窗口加 "远程状态" 标签，订阅 `message_received` 信号，显示最近消息
+
+**验证**：
+- 启动 GUI，扫码登录
+- 从手机微信发"#test"消息，GUI 实时显示
+- `data/logs/autogame.log` 记录所有收到的消息
+
+### 阶段 2.3：基础指令系统（1~2 天）
+
+**目标**：5 个基础指令可用，远程触发本地模板执行。
+
+**动作**：
+1. 实现 `remote/commands/base.py`（Command 抽象）
+2. 实现 `remote/commands/registry.py`（注册表）
+3. 实现 `remote/commands/parser.py`（解析器）
+4. 实现 `remote/commands/dispatcher.py`（分发）
+5. 实现 5 个具体指令：
+   - `#run <模板名>` → 触发 `GameExecutor.execute_template`
+   - `#list` → 列出可用模板（调 `TemplateManager.list_names`）
+   - `#status` → 查询当前执行状态
+   - `#stop` → 停止当前任务
+   - `#report <task_id>` → 查询报告（调 `ReportGenerator`）
+6. 实现 `remote/session.py`（用户白名单）
+7. 实现 `remote/router.py`（消息路由）
+
+**验证**：
+- 手机发 `#list`，Python 回发可用模板列表
+- 手机发 `#run 签到模板`，本地执行，执行完回发"签到完成"
+- 非白名单用户发消息被忽略
+
+### 阶段 2.4：指令调度器（1 天）
+
+**目标**：多指令顺序执行，避免窗口冲突。
+
+**动作**：
+1. 实现 `remote/scheduler/queue.py`（CommandQueue 单线程消费）
+2. 实现 `remote/scheduler/state.py`（执行状态机）
+3. router 中接入 scheduler，所有指令经队列消费
+4. 指令开始/结束时通过 `sender.send_text` 通知用户
+
+**验证**：
+- 连续发 3 个 `#run` 指令，依次执行不冲突
+- `#status` 能返回当前正在执行的指令 + 队列剩余数量
+
+### 阶段 2.5：大模型编排（2~3 天，可独立迭代）
+
+**目标**：自然语言指令被 LLM 拆解为指令队列。
+
+**动作**：
+1. 实现 `remote/llm/provider.py`（抽象接口）
+2. 实现 `remote/llm/anthropic_provider.py`（Claude，依赖 `anthropic` 包）
+3. 实现 `remote/llm/openai_provider.py`（OpenAI 兼容，依赖 `openai` 包）
+4. 实现 `remote/llm/prompt_templates.py`（含可用指令清单 + 输出 JSON 格式约束）
+5. 实现 `remote/llm/orchestrator.py`（编排 + JSON Schema 校验 + 指令白名单二次验证）
+6. router 中接入 orchestrator，非 `#` 消息转 LLM
+
+**验证**：
+- 手机发"帮我把签到和领体力做了"
+- LLM 拆解为 `[#run 签到, #run 领体力]`
+- 依次执行后回发汇总报告
+- LLM 输出非白名单指令时被拒绝（安全防线）
+
+### 阶段 2.6：GUI 集成与稳定性（1 天）
+
+**目标**：远程驱动完整集成到 GUI，关闭时优雅退出。
+
+**动作**：
+1. 实现 `ui/dialogs/remote_status.py`（连接状态指示灯 + 二维码显示）
+2. 实现 `ui/dialogs/command_console.py`（指令执行日志，线程安全显示）
+3. 在 `MainGUI` 添加"远程驱动"菜单项
+4. `QApplication.aboutToQuit` 信号触发 `client.stop()` + `jvm.shutdown()`
+5. 白名单配置 UI（持久化到 `config/remote.yaml`）
+
+**验证**：
+- GUI 中"远程驱动"菜单可打开配置面板
+- 关闭 GUI 后 `tasklist | findstr java` 输出为空（JVM 干净退出）
+- 启动时如未配置远程，不阻塞 GUI
+
+---
+
+## 7. 关键风险与对策
+
+| 风险 | 影响 | 对策 |
+|---|---|---|
+| JVM 启动慢（1~2s）阻塞 GUI 主线程 | UI 卡顿 | JVM 在独立 QThread 启动，启动信号通过 pyqtSignal 回主线程 |
+| OnMessageListener 在 JVM 线程回调 | 直接操作 QWidget 崩溃 | pyqtSignal 转主线程，listener 仅做 emit |
+| SDK 长轮询阻塞 JVM 关闭 | GUI 退出挂起 | `aboutToQuit` 信号触发 `client.stop` → `jpype.shutdownJVM` |
+| Python 3.13 + JPype 兼容性问题 | import 失败 | Spike 阶段先验证；备选 Py4J 方案 |
+| 微信账号封禁（机器人行为特征） | 账号失效 | 用专用测试号；控制消息频率；模拟真人节奏（消息间隔 800~2500ms 随机） |
+| 远程指令注入（任意人发消息触发自动化） | 安全风险 | 用户白名单（from_user_id 校验）；指令权限分级（admin / user） |
+| ilink SDK 升级破坏 Python 集成 | 调用失败 | SDK 版本锁定到 `config/ilink.py`；启动时探测版本不匹配告警 |
+| 同一窗口并发执行（多指令并发触发） | 自动化混乱 | CommandQueue 单线程消费，强制串行 |
+| LLM 拆解指令失败/越界 | 执行错误指令 | LLM 输出 JSON Schema 校验 + 指令白名单二次验证 |
+| SDK jar 路径错误或缺失 | 启动崩溃 | `JVMManager.start` 显式检查 jar 存在，缺失时报清晰错误 |
+| Java 异常丢失堆栈 | 调试困难 | `send_text` 等方法外层 try/except，把 `java.lang.Throwable` 转为 `AutogameError` 并保留 cause |
+| SDK 内部 AWT 线程与 PyQt6 冲突 | GUI 死锁 | JVM 启动参数加 `-Djava.awt.headless=true`（SDK 不需要 GUI） |
+| 失败指令重复触发（用户重发） | 资源浪费 | 短时间内相同指令去重（基于 user_id + command_hash） |
+
+---
+
+## 8. 依赖工具链
+
+| 工具 | 版本 | 用途 | 阶段 |
+|---|---|---|---|
+| jpype1 | >=1.5 | Python 调 Java 的核心库 | 2.1 |
+| JDK | 17+ | JVM（用户机预装） | 2.1 |
+| wechat-ilink-sdk-java jar | 跟随上游 | 远程通信 SDK（从 ilink 项目取或 mvn install） | 2.1 |
+| anthropic | latest | Claude API SDK（阶段 2.5 二选一） | 2.5 |
+| openai | latest | OpenAI 兼容 API SDK（阶段 2.5 二选一） | 2.5 |
+| PyInstaller | >=6.0 | 打包含 jar（`--add-data "lib/ilink-sdk.jar;lib"`） | 发布 |
+
+---
+
+## 9. 验证方式
+
+| 阶段 | 命令 | 预期 |
+|---|---|---|
+| 2.1 | `uv run python tests/manual/test_jpype_spike.py` | 输出 `JVM started, currentTimeMillis=...` |
+| 2.2 | `uv run autogame-gui` 启动后扫码，手机发 `#test` | GUI 显示 `收到：#test from <user_id>` |
+| 2.3 | 手机发 `#list` | Python 回发可用模板列表 |
+| 2.3 | 手机发 `#run 签到模板` | 本地执行签到，完成后回发"签到完成：金币+100" |
+| 2.4 | 连发 3 个 `#run` | `#status` 返回 "队列中：2，正在执行：第1个" |
+| 2.5 | 手机发"帮我把签到和领体力做了" | LLM 拆解为 2 个指令顺序执行，完成后回发汇总报告 |
+| 2.6 | 关闭 GUI | `tasklist \| findstr java` 输出为空（JVM 干净退出） |
+
+---
+
+## 10. 与方向 1/3 的关系
+
+- **依赖方向 1**：包结构稳定后才好引入 `remote/` 包。方向 1 完成前启动会反复触发 import 重构。
+- **正交于方向 3**：方向 3 升级"本地执行能力"（协议策略），方向 2 提供"远程触发通道"。两者协同：远程指令（`#run`）触发执行，执行内部可走图像或协议策略。
+- **LLM 编排（阶段 2.5）可独立迭代**：不阻塞核心远程驱动链路，可后期补充。
