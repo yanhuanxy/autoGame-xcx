@@ -437,9 +437,18 @@ class _SignalCarrier(QObject):
     message_error = pyqtSignal(str)
 
 
-@JImplements("com.github.wechat.ilink.sdk.core.listener.OnMessageListener")
+# ⚠️ deferred=True 必须加：
+# @JImplements 装饰类时会立即校验 Java 接口可解析，但此时 JVM 可能还没启动，
+# 会导致 JVMNotRunning 异常。deferred=True 把校验延后到首次实例化，
+# 这样模块可以在 JVM 未启动时被 import，只要在使用前调用 jvm.start() 即可。
+@JImplements(
+    "com.github.wechat.ilink.sdk.core.listener.OnMessageListener",
+    deferred=True,
+)
 class PythonMessageListener:
-    """实现 Java 接口，注册到 ILinkClientBuilder.onMessage()。"""
+    """实现 Java 接口，注册到 ILinkClientBuilder.onMessage()。
+
+    实例化要求 JVM 已启动（client.py 里通过 lazy property 保证）。"""
 
     def __init__(self):
         self._carrier = _SignalCarrier()
@@ -458,6 +467,13 @@ class PythonMessageListener:
             logger.exception("Failed to handle incoming messages")
             self.message_error.emit(str(e))
 ```
+
+> **`deferred=True` 的关键作用**（阶段 2.2 实战发现）：
+>
+> - 不加 `deferred=True`：`@JImplements(...)` 在 import 模块时立即调用 `JClass(interface_name)`，此时 JVM 还没启动 → `JVMNotRunning: Java Virtual Machine is not running`
+> - 加 `deferred=True`：类定义时只标记"待绑定接口"，首次实例化时才真正解析接口
+> - 配合 `ILinkClient.message_listener` 的 lazy property（在 `jvm.start()` 之后才实例化），可保证 JVM 启动顺序正确
+> - `login_listener.py` 的 `PythonLoginListener` 同理
 
 ### 5.3 `remote/ilink/client.py`：ILinkClient 包装
 
@@ -874,6 +890,13 @@ class LLMOrchestrator:
 
 ### 5.12 `remote/commands/definitions/run_template.py`：示例指令
 
+> **阶段 2.3 实战修订**：原假设的 `template_manager.find_by_name()` / `list_names()` 在现有 `core/template_manager.py` 中**不存在**。实际可用 API：
+> - `manager.list_templates()` → `list[dict]`，元素含 `{filename, filepath, name, version, game_name, created_time}`
+> - `executor.execute_template(filepath)` → `bool`
+> - `executor.execution_report` → `dict`（含 start_time/end_time/tasks/summary）
+>
+> 下面的示例已改用真实 API。`_find_template_by_name()` 是本指令私有辅助，从 `list_templates()` 结果按 name 过滤。
+
 ```python
 """#run <模板名>：触发本地模板执行。"""
 from autogame_xcx.remote.commands.base import Command, CommandContext, CommandResult
@@ -889,25 +912,37 @@ class RunTemplateCommand(Command):
         template_name = args.strip()
         if not template_name:
             return CommandResult(success=False, message="用法：" + self.usage)
-        # 查找模板
-        template = ctx.template_manager.find_by_name(template_name)
-        if template is None:
-            available = ctx.template_manager.list_names()
+        # 用现有 list_templates() 按 name 过滤（find_by_name 在源码中不存在）
+        match = _find_template_by_name(ctx.template_manager, template_name)
+        if match is None:
+            available = [t["name"] for t in ctx.template_manager.list_templates()]
             return CommandResult(
                 success=False,
-                message=f"模板不存在：{template_name}\n可用模板：{', '.join(available)}",
+                message=f"模板不存在：{template_name}\n可用模板：{', '.join(available) or '(无)'}",
             )
-        # 触发执行
+        # 触发执行（execute_template 返回 bool）
         ctx.sender.send_text(ctx.user_id, f"开始执行模板：{template_name}")
-        success = ctx.executor.execute_template(template["path"])
+        success = ctx.executor.execute_template(match["filepath"])
         if success:
+            summary = ctx.executor.execution_report.get("summary", {})
             return CommandResult(
                 success=True,
-                message=f"模板执行完成：{template_name}",
-                payload={"template": template_name, "task_id": "..."},
+                message=(
+                    f"模板执行完成：{template_name}\n"
+                    f"任务 {summary.get('completed', 0)}/{summary.get('total_tasks', 0)} 成功 "
+                    f"（成功率 {summary.get('success_rate', '?')}）"
+                ),
+                payload={"template": template_name, "filepath": match["filepath"]},
             )
-        else:
-            return CommandResult(success=False, message=f"模板执行失败：{template_name}")
+        return CommandResult(success=False, message=f"模板执行失败：{template_name}")
+
+
+def _find_template_by_name(manager, name: str):
+    """从 manager.list_templates() 按 name 精确匹配。"""
+    for t in manager.list_templates():
+        if t["name"] == name:
+            return t
+    return None
 ```
 
 ---
