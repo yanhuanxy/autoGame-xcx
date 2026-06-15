@@ -28,3 +28,12 @@ tests/
 node_modules/
 /autogame_xcx.egg-info/
 /models/
+
+### Python ###
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/

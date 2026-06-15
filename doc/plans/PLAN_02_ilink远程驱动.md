@@ -5,6 +5,14 @@
 > 预计周期：6 阶段 = 约 2 周（核心链路） + 后续 LLM 编排迭代
 > 前置依赖：方向 1 完成（包结构稳定）
 
+> **进度状态**：
+> - ✅ 阶段 2.1 JPype Spike（2026-06-15 完成，17/17 检查通过）
+> - 🚧 阶段 2.2 消息接收通道（进行中）
+> - ⬜ 阶段 2.3 基础指令系统
+> - ⬜ 阶段 2.4 指令调度器
+> - ⬜ 阶段 2.5 大模型编排
+> - ⬜ 阶段 2.6 GUI 集成与稳定性
+
 ---
 
 ## 1. Context（为什么做）
@@ -85,11 +93,103 @@ LLM 拆解为 [#run 签到, #run 领体力]
 | 能力缺口 | 解决方案 |
 |---|---|
 | Python 调 Java | 引入 JPype1（同进程 JNI） |
-| 接收 SDK 消息回调 | `@JImplement("...OnMessageListener")` 让 Python 类实现 Java 接口 |
+| 接收 SDK 消息回调 | `@JImplements("...OnMessageListener")` 让 Python 类实现 Java 接口 |
 | 跨线程通信（JVM 线程 → Qt 主线程） | pyqtSignal 转发 |
 | 指令解析 | 新增 `remote/commands/` 子包 |
 | 顺序执行（避免窗口冲突） | 新增 `remote/scheduler/` 子包 |
 | 自然语言编排 | 新增 `remote/llm/` 子包（后续阶段） |
+
+### 2.4 Spike 实战发现（2026-06-15，阶段 2.1 产出）
+
+阶段 2.1 完成时，spike 脚本 `scripts/spike_jpype_ilink.py` 揭示了 4 个原文档未覆盖的问题。这些发现已回写到本规划相关章节，并对后续阶段（2.2~2.6）的实现有直接影响。
+
+#### 发现 1：JPype API 名是 `JImplements`（带 s），不是 `JImplement`
+
+**原文档错误**：所有出现 `@JImplement` 的地方都写错（共 8 处）。
+
+**正确写法**：
+```python
+from jpype import JImplements, JOverride
+
+@JImplements("com.github.wechat.ilink.sdk.core.listener.OnMessageListener")
+class PythonMessageListener:
+    @JOverride
+    def onMessages(self, messages): ...
+```
+
+**修复状态**：✅ 文档已全文替换（§2.3、§3.1、§3.2、§4 目录注释、§5.2 代码示例）。
+
+#### 发现 2：ilink jar 单独加载会 `NoClassDefFoundError`，必须加 14 个依赖 jar
+
+**症状**：
+```
+java.lang.NoClassDefFoundError: org/slf4j/LoggerFactory
+    at JClass("com.github.wechat.ilink.sdk.ILinkClient")
+```
+
+**原因**：SDK 的 pom.xml 声明了 okhttp / jackson-databind / slf4j-api / logback-classic / kotlin-stdlib 等 14 个 runtime 依赖，但 jar 文件本身没 shade 它们。Maven 构建只把 SDK 自己的 class 打进 jar，依赖 jar 在用户工程里解析。
+
+**解决**：在 ilink SDK 工程下跑一次：
+```bash
+cd ../wechat-ilink-sdk-java
+mvn dependency:copy-dependencies \
+    -DoutputDirectory=target/dependency \
+    -DincludeScope=runtime
+```
+
+产出 14 个 jar 在 `target/dependency/`：
+```
+annotations-13.0.jar           kotlin-stdlib-common-1.9.10.jar
+jackson-annotations-2.17.2.jar kotlin-stdlib-jdk7-1.8.21.jar
+jackson-core-2.17.2.jar        kotlin-stdlib-jdk8-1.8.21.jar
+jackson-databind-2.17.2.jar    kotlin-stdlib-1.8.21.jar
+logback-classic-1.5.8.jar      okhttp-4.12.0.jar
+logback-core-1.5.8.jar         okio-jvm-3.6.0.jar
+                                okio-3.6.0.jar
+                                slf4j-api-2.0.13.jar
+```
+
+**JVMManager 适配**：`start()` 必须把整个 `deps_dir/*.jar` 加到 classpath（详见 §5.1 修订后的实现）。
+
+**对 config/ilink.py 的影响**：必须新增 `deps_dir: Path` 字段（不仅 `jar_path`）。
+
+**后续阶段注意事项**：
+- 阶段 2.6 用 PyInstaller 打包时，`--add-data` 要带 jar + 整个 deps 目录
+- ilink SDK 版本升级后，依赖列表会变，要重跑 `copy-dependencies`
+- 建议在 `_cli.py` 启动时探测 `deps_dir` 是否存在，缺失则提示用户执行 mvn 命令
+
+#### 发现 3：JVM 路径探测必须 fallback
+
+**症状**：
+```
+JVMNotFoundException: No JVM shared library file (jvm.dll) found.
+Try setting up the JAVA_HOME environment variable properly.
+```
+
+**原因**：JPype 1.7.1 在 Windows 上不查 PATH 上的 java，只查注册表 + JAVA_HOME。Microsoft JDK 用 .msi 安装可能不写注册表。
+
+**解决**：`find_jvm_dll()` 函数实现三级 fallback（详见 §5.1）：
+1. `JAVA_HOME/bin/server/jvm.dll`
+2. 调 `java -XshowSettings:properties` 拿 `java.home`，组合 `lib/server/jvm.dll` 或 `bin/server/jvm.dll`
+3. 退化到 `jpype.getDefaultJVMPath()`（让上层报清晰错误）
+
+**当前环境**：实际探测到 `D:\jdk\jdk-17.0.18.8-hotspot\bin\server\jvm.dll`。
+
+#### 发现 4：JPype 桥接层 Python 写法陷阱
+
+JPype 的 Python ↔ Java 代理桥接有几个非直觉行为，直接影响 listener 等核心代码的写法：
+
+| Python 写法 | 行为 | 正确做法 |
+|---|---|---|
+| `isinstance(py_obj, java_interface)` | 永远 `False`（Python 的 isinstance 不能判 Java 接口） | 用 Java 反射：`OnMessageListener.class_.isInstance(py_obj)` |
+| `proxy_a is proxy_b`（同一 Java 对象的两个 Python 引用） | 永远 `False`（JPype 每次返回新 Python 代理） | 用 Java 端 identity：`int(a.hashCode()) == int(b.hashCode())` |
+| `messages: list[WeixinMessage]` 类型注解 | JPype 内部 List 类型不能直接当 Python list | 用 `for msg in messages:` 迭代即可，不要尝试 `list(messages)` 或 `messages[0]` |
+| `@JImplements` 类继承 `QObject` | 失败（JPype 元类冲突） | 用单独的 `_SignalCarrier(QObject)` 持有 pyqtSignal，listener 持有 carrier（详见 §5.2） |
+
+**对实现的影响**：
+- `message_listener.py` 的 listener 类不能继承 QObject（信号必须放独立 carrier）
+- 单元测试里检查"listener 是否实现了接口"要用 `class_.isInstance()`，不能用 `isinstance()`
+- 阶段 2.4 的 CommandQueue 单元测试也要避免 `is` 比较 Java 对象
 
 ---
 
@@ -99,7 +199,7 @@ LLM 拆解为 [#run 签到, #run 领体力]
 
 | 方案 | 启动开销 | 调用延迟 | 双向回调 | 部署复杂度 | 适用性 |
 |---|---|---|---|---|---|
-| **JPype1** ★推荐 | ~1.5s（一次） | 微秒级（同进程 JNI） | 强（`@JImplement` 直接实现 Java 监听器） | 单进程需 JDK | ✅ 完美匹配 |
+| **JPype1** ★推荐 | ~1.5s（一次） | 微秒级（同进程 JNI） | 强（`@JImplements` 直接实现 Java 监听器） | 单进程需 JDK | ✅ 完美匹配 |
 | Py4J（备选） | ~3s（独立进程） | 毫秒级（socket） | 中（需 callback server） | 独立 Java 进程 | ⚠️ 进程隔离需求时 |
 | subprocess + CLI | ~1s/次 | 秒级 | 无 | 极低 | ❌ 无法长轮询接收消息 |
 | gRPC | ~2s | 毫秒级 | 强 | 需 Java 端开发 server | ❌ SDK 是客户端不是 server |
@@ -107,7 +207,7 @@ LLM 拆解为 [#run 签到, #run 领体力]
 
 ### 3.2 推荐 JPype1 理由
 
-1. **完美匹配 SDK 模式**：ilink SDK 本质是"长连接客户端 + 监听器回调"，需要 Python 实现 `OnMessageListener` 接收消息——JPype 的 `@JImplement` 让 Python 类直接实现 Java 接口，**是唯一原生支持此模式的方案**。
+1. **完美匹配 SDK 模式**：ilink SDK 本质是"长连接客户端 + 监听器回调"，需要 Python 实现 `OnMessageListener` 接收消息——JPype 的 `@JImplements` 让 Python 类直接实现 Java 接口，**是唯一原生支持此模式的方案**。
 2. **零网络开销**：同进程 JNI，消息回调延迟可控在毫秒级。
 3. **PyQt6 共存稳定**：单进程模型，JVM 启动后常驻，与 Qt 事件循环无冲突。
 4. **依赖最小**：仅一个 `jpype1` pip 包；SDK jar 直接通过 classpath 加载，无需 Java 端额外改造。
@@ -130,8 +230,8 @@ src/autogame_xcx/
 │   │   ├── __init__.py
 │   │   ├── jvm.py                       # JVM 生命周期（懒加载、atexit 关闭）
 │   │   ├── client.py                    # ILinkClient 包装（登录、sendText 等）
-│   │   ├── message_listener.py          # @JImplement 实现 OnMessageListener
-│   │   ├── login_listener.py            # @JImplement 实现 OnLoginListener
+│   │   ├── message_listener.py          # @JImplements 实现 OnMessageListener
+│   │   ├── login_listener.py            # @JImplements 实现 OnLoginListener
 │   │   └── converters.py                # WeixinMessage/MessageItem ↔ Python dict
 │   │
 │   ├── commands/                        # 指令系统
@@ -204,14 +304,58 @@ ui  →  remote  →  core (executor/template_manager)
 
 ```python
 """全局唯一 JVM 实例，懒加载，PyQt 退出时优雅关闭。"""
+import os
+import subprocess
 import threading
 from pathlib import Path
 from typing import Optional
 import jpype
-import jpype.imports
+import jpype.imports  # noqa: F401
 
 from autogame_xcx.config.ilink import ILinkConfig
 from autogame_xcx.exceptions import AutogameError
+
+
+def find_jvm_dll() -> str:
+    """从 JAVA_HOME 或 PATH 上的 java 探测 jvm.dll。
+
+    Spike 实战发现：jpype.getDefaultJVMPath() 在 Windows 上不查 PATH，
+    仅靠注册表 + JAVA_HOME；Microsoft JDK 用 .msi 装可能不写注册表，
+    导致 JVMNotFoundException。本函数显式 fallback：
+      1. JAVA_HOME/bin/server/jvm.dll
+      2. java -XshowSettings:properties 拿 java.home，再 lib/server 或 bin/server
+      3. 退化到 jpype.getDefaultJVMPath()（让上层报清晰错误）
+    """
+    java_home = os.environ.get("JAVA_HOME")
+    if java_home:
+        candidate = Path(java_home) / "bin" / "server" / "jvm.dll"
+        if candidate.exists():
+            return str(candidate)
+
+    from shutil import which
+    java_exe = os.environ.get("JAVA_HOME")
+    if java_exe:
+        java_exe = str(Path(java_exe) / "bin" / "java.exe")
+    else:
+        java_exe = which("java")
+    if java_exe:
+        try:
+            out = subprocess.check_output(
+                [java_exe, "-XshowSettings:properties", "-version"],
+                stderr=subprocess.STDOUT, text=True, timeout=10,
+            )
+            for line in out.splitlines():
+                line = line.strip()
+                if line.startswith("java.home ="):
+                    home = Path(line.split("=", 1)[1].strip())
+                    for sub in ("lib/server", "bin/server"):
+                        dll = home / sub / "jvm.dll"
+                        if dll.exists():
+                            return str(dll)
+        except Exception:
+            pass
+
+    return jpype.getDefaultJVMPath()
 
 
 class JVMManager:
@@ -236,9 +380,21 @@ class JVMManager:
             return
         if not self.config.jar_path.exists():
             raise AutogameError(f"ilink SDK jar not found: {self.config.jar_path}")
+        if not self.config.deps_dir.exists():
+            raise AutogameError(
+                f"ilink SDK dependencies not found: {self.config.deps_dir}\n"
+                f"Run: mvn dependency:copy-dependencies "
+                f"-DoutputDirectory=target/dependency -DincludeScope=runtime "
+                f"in wechat-ilink-sdk-java/"
+            )
+        # Spike 实战发现：单独加载 SDK jar 会 NoClassDefFoundError: org/slf4j/LoggerFactory
+        # 必须把 14 个运行时依赖 jar（okhttp/jackson/slf4j/logback/kotlin-stdlib 等）一起加入
+        dep_jars = sorted(self.config.deps_dir.glob("*.jar"))
+        classpath = [str(self.config.jar_path)] + [str(p) for p in dep_jars]
         jpype.startJVM(
+            find_jvm_dll(),
             *self.config.jvm_args,
-            classpath=[str(self.config.jar_path)],
+            classpath=classpath,
             convertStrings=True,  # Java String 自动转 Python str
         )
         self._started = True
@@ -253,6 +409,16 @@ class JVMManager:
         return self._started
 ```
 
+> **关键配置字段（`config/ilink.py`）**：
+> ```python
+> @dataclass(frozen=True)
+> class ILinkConfig:
+>     jar_path: Path       # wechat-ilink-sdk-java/target/wechat-ilink-sdk-X.Y.Z.jar
+>     deps_dir: Path       # wechat-ilink-sdk-java/target/dependency/  (14 个 jar)
+>     jvm_args: list[str]  # 默认 ["-Djava.awt.headless=true"]
+>     # ... 登录凭证 / 心跳 / channelVersion 等
+> ```
+
 ### 5.2 `remote/ilink/message_listener.py`：核心回调实现
 
 ```python
@@ -260,18 +426,18 @@ class JVMManager:
 SDK 在 JVM 线程回调 onMessages，不能直接操作 QWidget，
 必须通过 pyqtSignal 转主线程。"""
 from PyQt6.QtCore import QObject, pyqtSignal
-from jpype import JImplement, JOverride
+from jpype import JImplements, JOverride
 
 from autogame_xcx.remote.ilink import converters
 
 
 class _SignalCarrier(QObject):
-    """单独的 QObject 持有信号（JImplement 类不能多继承）。"""
+    """单独的 QObject 持有信号（JImplements 类不能多继承）。"""
     message_received = pyqtSignal(dict)
     message_error = pyqtSignal(str)
 
 
-@JImplement("com.github.wechat.ilink.sdk.core.listener.OnMessageListener")
+@JImplements("com.github.wechat.ilink.sdk.core.listener.OnMessageListener")
 class PythonMessageListener:
     """实现 Java 接口，注册到 ILinkClientBuilder.onMessage()。"""
 
@@ -748,40 +914,46 @@ class RunTemplateCommand(Command):
 
 ## 6. 迁移路径（分 6 阶段）
 
-### 阶段 2.1：JPype Spike（半天）
+### 阶段 2.1：JPype Spike（半天）✅ 已完成（2026-06-15）
 
 **目标**：验证 JPype1 在 Python 3.13 + Windows 环境下能正常启动 JVM 并加载 ilink SDK jar。
 
 **动作**：
-1. `uv add jpype1`
-2. 从 `D:\IDEAGithubWork\wechat-ilink\wechat-ilink-sdk-java\target\` 取构建好的 jar（若无则 `mvn package`）
-3. 放置到 `lib/ilink-sdk.jar`，加入 `.gitignore`（避免大文件入库）
-4. 在 `tests/manual/test_jpype_spike.py` 写最小验证：
-   - 启动 JVM，加载 jar
-   - 调用 `java.lang.System.currentTimeMillis()`
-   - 调用 `ILinkClientBuilder().toString()` 验证类可加载
-   - 关闭 JVM
+1. `uv add jpype1`（实际版本 1.7.1）
+2. 从 `D:\IDEAGithubWork\wechat-ilink\wechat-ilink-sdk-java\target\` 取构建好的 jar（先 `mvn package`）
+3. **必须**额外跑 `mvn dependency:copy-dependencies -DoutputDirectory=target/dependency -DincludeScope=runtime` 拷 14 个依赖 jar（详见 §2.4 Spike 发现）
+4. spike 脚本：`scripts/spike_jpype_ilink.py`（不在 `tests/` 下，因为 `.gitignore` 屏蔽了 `tests/`）
+5. spike 验证项（不下到 executeLogin，不触发网络请求）：
+   - JVM 启动 + jvm.dll 自动探测
+   - 14 个 jar 加载到 classpath
+   - `JClass` 访问 4 个关键类（ILinkClient / ILinkClientBuilder / OnMessageListener / WeixinMessage）
+   - `@JImplements` 实现 OnMessageListener（**API 名带 s**）
+   - `ILinkClient.builder().onMessage(listener).build()` 链式构造
+   - `client.getConfig()` 不发请求验证
+   - `client.close()` + `jpype.shutdownJVM()` 优雅退出
 
-**验证**：
-- `uv run python tests/manual/test_jpype_spike.py` 输出毫秒时间戳 + Builder.toString() 字符串
-- JVM 启动时间 < 3 秒
+**验证结果**：17/17 项检查通过，输出 `SPIKE PASSED`。
+
+**实际发现**：见 §2.4 Spike 实战发现。
 
 ### 阶段 2.2：消息接收通道（1~2 天）
 
-**目标**：Python 能通过 SDK 接收微信消息并显示在 GUI。
+**目标**：Python 能通过 SDK 接收微信消息并通过 pyqtSignal 暴露给上层（GUI / 调度器订阅）。本阶段不集成到主 GUI（那是阶段 2.6 的事），仅产出独立可运行的 demo 脚本验证完整链路。
 
 **动作**：
-1. 实现 `remote/ilink/jvm.py`（JVMManager）
-2. 实现 `remote/ilink/converters.py`（消息转换）
-3. 实现 `remote/ilink/message_listener.py`（PythonMessageListener）
-4. 实现 `remote/ilink/client.py`（ILinkClient 门面）
-5. 在 `_cli.py` 启动时初始化 ILinkClient（可选，根据配置决定是否启用远程）
-6. 在主窗口加 "远程状态" 标签，订阅 `message_received` 信号，显示最近消息
+1. 实现 `remote/ilink/jvm.py`（JVMManager + find_jvm_dll，按 §5.1 修订后的版本）
+2. 实现 `remote/ilink/converters.py`（WeixinMessage / MessageItem → Python dict）
+3. 实现 `remote/ilink/message_listener.py`（PythonMessageListener + `_SignalCarrier`，按 §5.2 + §2.4 发现 4）
+4. 实现 `remote/ilink/login_listener.py`（PythonLoginListener，处理 onLoginSuccess / onLoginFailure）
+5. 实现 `remote/ilink/client.py`（ILinkClient Python 门面，start/send_text/stop）
+6. 写 `scripts/demo_remote_listen.py`：启动 JVM → 执行登录 → 显示二维码（控制台 base64 或落盘）→ 监听消息 → 控制台打印
 
-**验证**：
-- 启动 GUI，扫码登录
-- 从手机微信发"#test"消息，GUI 实时显示
+**验证（不实测扫码场景，留待用户提供测试号）**：
+- `python scripts/demo_remote_listen.py --dry-run`：仅启动 JVM + 构造 client + 优雅关闭（不下到 executeLogin），验证模块装配无 import 错误
+- `python scripts/demo_remote_listen.py`：实际跑 executeLogin，扫码登录后从手机发消息，控制台打印 `收到：xxx from <user_id>`
 - `data/logs/autogame.log` 记录所有收到的消息
+
+**已完成依赖**：阶段 2.1 spike 脚本（`scripts/spike_jpype_ilink.py`）已验证 JVM/类加载/`@JImplements` 实现，本阶段复用 spike 的 `find_jvm_dll` 实现。
 
 ### 阶段 2.3：基础指令系统（1~2 天）
 
@@ -863,7 +1035,7 @@ class RunTemplateCommand(Command):
 | JVM 启动慢（1~2s）阻塞 GUI 主线程 | UI 卡顿 | JVM 在独立 QThread 启动，启动信号通过 pyqtSignal 回主线程 |
 | OnMessageListener 在 JVM 线程回调 | 直接操作 QWidget 崩溃 | pyqtSignal 转主线程，listener 仅做 emit |
 | SDK 长轮询阻塞 JVM 关闭 | GUI 退出挂起 | `aboutToQuit` 信号触发 `client.stop` → `jpype.shutdownJVM` |
-| Python 3.13 + JPype 兼容性问题 | import 失败 | Spike 阶段先验证；备选 Py4J 方案 |
+| Python 3.13 + JPype 兼容性问题 | import 失败 | ✅ Spike 已验证（jpype1 1.7.1 + Python 3.13 通过） |
 | 微信账号封禁（机器人行为特征） | 账号失效 | 用专用测试号；控制消息频率；模拟真人节奏（消息间隔 800~2500ms 随机） |
 | 远程指令注入（任意人发消息触发自动化） | 安全风险 | 用户白名单（from_user_id 校验）；指令权限分级（admin / user） |
 | ilink SDK 升级破坏 Python 集成 | 调用失败 | SDK 版本锁定到 `config/ilink.py`；启动时探测版本不匹配告警 |
@@ -873,6 +1045,9 @@ class RunTemplateCommand(Command):
 | Java 异常丢失堆栈 | 调试困难 | `send_text` 等方法外层 try/except，把 `java.lang.Throwable` 转为 `AutogameError` 并保留 cause |
 | SDK 内部 AWT 线程与 PyQt6 冲突 | GUI 死锁 | JVM 启动参数加 `-Djava.awt.headless=true`（SDK 不需要 GUI） |
 | 失败指令重复触发（用户重发） | 资源浪费 | 短时间内相同指令去重（基于 user_id + command_hash） |
+| **ilink jar 单独加载缺依赖**（Spike 发现） | `NoClassDefFoundError: org/slf4j/LoggerFactory` | `JVMManager.start` 把 `deps_dir/*.jar` 全部加入 classpath（详见 §2.4 发现 2、§5.1） |
+| **JAVA_HOME 未设导致找不到 jvm.dll**（Spike 发现） | `JVMNotFoundException` | `find_jvm_dll()` 三级 fallback：JAVA_HOME → `java -XshowSettings` → 默认（§5.1） |
+| **Python `isinstance`/`is` 在 JPype 桥接失效**（Spike 发现） | listener 注册校验误报失败 | 用 Java 反射 `class_.isInstance()` / `hashCode()` 比较（§2.4 发现 4） |
 
 ---
 
