@@ -11,7 +11,7 @@
 > - ✅ 阶段 2.3 基础指令系统（完成，单元测试 42/42）
 > - ✅ 阶段 2.4 指令调度器（完成，24/24 检查通过）
 > - ✅ 阶段 2.5 大模型编排（2026-06-16 完成，29/29 单元测试 + 24/24 演示脚本）
-> - ⬜ 阶段 2.6 GUI 集成与稳定性
+> - ✅ 阶段 2.6 GUI 集成与稳定性（2026-06-16 完成，19/19 单元测试 + 27/27 演示脚本）
 
 ---
 
@@ -258,6 +258,83 @@ llm = ["anthropic>=0.40", "openai>=1.50"]
 - 演示脚本：`uv run python scripts/demo_remote_llm.py`（24/24 通过，6 个场景覆盖 happy path / 越权 / 乱码 / 围栏 / router 集成 / provider 异常）
 
 真实 LLM 链路（用户配置 API key 后手动验证）作为阶段 2.6 GUI 集成时的端到端检查项。
+
+---
+
+### 2.6 阶段 2.6 实战发现（2026-06-16）
+
+阶段 2.6 完成时发现原文档 §5.3 / §6 阶段 2.6 的设计在落地时有 5 处需要修订。这些发现已回写到相关章节。
+
+#### 发现 1：`client.start()` 必须拆出 `prepare()`，否则 listener 信号有竞态
+
+**症状**：原 §5.3 的 `start()` 一气呵成做三件事——`jvm.start()` + 构造 Java client + `executeLogin()` 拿二维码。
+
+**问题**：SDK 在 `executeLogin()` 返回**之后立刻**开始轮询扫码状态，可能在毫秒级内 fire `login_success`。如果 listener 信号在 `executeLogin()` 调用**之后**才 connect，会丢失这次信号——用户已扫码但 driver 状态卡在 CONNECTING。
+
+**解决**：把 `start()` 拆成两段：
+```python
+def prepare(self) -> None:
+    """启动 JVM + 实例化 listeners + 构造 Java client，但不调 executeLogin。"""
+    self.jvm.start()
+    _ = self.message_listener  # 触发 listener 实例化
+    _ = self.login_listener
+    if self._client is None:
+        self._client = self._build_client()
+
+def start(self) -> str:
+    self.prepare()  # ← listener 已就绪
+    qr_content = self._client.executeLogin()
+    return str(qr_content)
+```
+
+`RemoteDriver._StartWorker.run` 的调用顺序：
+```
+1. client.prepare()             ← JVM 起 + listener 实例化
+2. driver._wire_listeners()     ← 把 listener 信号连到 driver slot（必须在 executeLogin 之前）
+3. client.start()               ← executeLogin 拿二维码
+```
+
+**对 §5.3 的回写**：原 `start()` 已重写为上述两段式；新增 `request_qr_code()` 也基于 `prepare()`。
+
+#### 发现 2：`executeLogin` 阻塞 1~2s，必须放 QThread，不能直接 `start()`
+
+**症状**：原 §6 阶段 2.6 仅说"启动远程驱动"，没明确线程模型。
+
+**问题**：`client.start()` 内部 `executeLogin()` 同步等 JVM 启动 + 网络初始化，约 1~2s。GUI 主线程直接调会冻结界面。
+
+**解决**：`RemoteDriver.start()` 内部创建 `QThread` + `_StartWorker(QObject)`，worker 跑完 `prepare/wire/start` 三步后通过 `qr_ready` pyqtSignal 把二维码回主线程。worker 完成后 `thread.quit()` 自动退出。
+
+**对 §6 阶段 2.6 的回写**：阶段目标补"QThread 包装 executeLogin，避免冻结 GUI"。
+
+#### 发现 3：`ILinkSdkConfig.default()` 在 SDK jar 缺失时立即抛错——必须延迟构造
+
+**症状**：原计划 `MainGUI` 直接 `client=ILinkClient(ILinkSdkConfig.default())`。
+
+**问题**：`ILinkSdkConfig.default()` 会立即检查 jar 存在性。如果用户没装 SDK jar，GUI 实例化阶段就崩溃——还没点"启动"就崩。
+
+**解决**：`RemoteDriver.__init__` 同时接受 `client` 实例或 `client_factory` 零参 callable。`MainGUI` 传 `client_factory=lambda: ILinkClient(ILinkSdkConfig.default())`，把 client 构造延迟到用户点击"启动"按钮。GUI 实例化阶段不触发任何 SDK 代码。
+
+**对 §6 阶段 2.6 的回写**：补"`client_factory` 模式：SDK jar 缺失时 GUI 仍可启动，错误推迟到点 Start 时报"。
+
+#### 发现 4：`qrcode` 库需要进核心 `[project].dependencies`，不是 optional
+
+**症状**：原计划没提二维码渲染依赖。
+
+**问题**：远程驱动 sidebar 页用 `qrcode.make(content)` 把扫码 URL 渲染成 QPixmap。如果设为 optional，用户装核心包后点"启动远程驱动"会看到"未安装 qrcode lib"的文本兜底——用户体验差。
+
+**解决**：`qrcode>=7.4` 进核心 `[project].dependencies`。包仅 ~50KB（纯 Python），不会显著增加安装开销。
+
+**对 §8 依赖工具链的影响**：新增 `qrcode | >=7.4 | 二维码渲染（远程驱动 sidebar 页） | 2.6`。
+
+#### 发现 5：LLM 配置 UI 必须支持"启用/禁用"开关，否则禁用时也强制装 anthropic
+
+**症状**：原 §6 阶段 2.6 UI 只列了"LLM API key 字段"。
+
+**问题**：用户可能只用 `#指令` 不用自然语言，不需要 LLM。如果 UI 没有启用开关，每次保存配置都会触发 `import anthropic`，未安装时报错。
+
+**解决**：`remote/llm_config.py` 新增 `LlmConfig.enabled` 字段 + `validate()` 方法。UI 提供"启用 LLM 编排"复选框，禁用时 `validate()` 直接返回 None，不触发任何 import。启用时才校验 provider/api_key/model，import 失败时 orchestrator 保持 None（router 降级为"不支持自然语言"模式）。
+
+**对 §6 阶段 2.6 的回写**：补"LLM 配置 UI 含 enabled 开关 + provider 单选 + api_key/model/base_url 输入框"。
 
 ---
 
@@ -546,7 +623,13 @@ class PythonMessageListener:
 ### 5.3 `remote/ilink/client.py`：ILinkClient 包装
 
 ```python
-"""封装 ILinkClientBuilder + ILinkClient，提供 Python 友好的 API。"""
+"""封装 ILinkClientBuilder + ILinkClient，提供 Python 友好的 API。
+
+阶段 2.6 修订：start() 拆为 prepare() + start() 两段（详见 §2.6 发现 1）。
+prepare() 跑 JVM + 构造 client，但不调 executeLogin；
+RemoteDriver 在 prepare() 之后、start() 之前 wire listener 信号，
+避免 SDK 在 executeLogin 返回后立刻 fire login_success 的竞态。
+"""
 import logging
 from typing import Optional
 from autogame_xcx.remote.ilink.jvm import JVMManager
@@ -567,18 +650,31 @@ class ILinkClient:
         self.login_listener = PythonLoginListener()
         self._client = None
 
-    def start(self) -> str:
-        """启动 JVM + 构造 client + 执行登录，返回二维码内容。"""
+    def prepare(self) -> None:
+        """启动 JVM + 实例化 listeners + 构造 Java client，但**不**调 executeLogin。
+
+        幂等：重复调用安全。RemoteDriver._StartWorker.run 在 client.start() 之前
+        调此方法，确保 listener 信号已就绪。
+        """
         self.jvm.start()
+        _ = self.message_listener  # 触发 listener 实例化（@JImplements deferred）
+        _ = self.login_listener
         if self._client is None:
-            from com.github.wechat.ilink.sdk import ILinkClientBuilder
-            self._client = (
-                ILinkClientBuilder()
-                .config(self.config.to_java())
-                .onMessage(self.message_listener)
-                .onLogin(self.login_listener)
-                .build()
-            )
+            self._client = self._build_client()
+
+    def _build_client(self):
+        from com.github.wechat.ilink.sdk import ILinkClientBuilder
+        return (
+            ILinkClientBuilder()
+            .config(self.config.to_java())
+            .onMessage(self.message_listener)
+            .onLogin(self.login_listener)
+            .build()
+        )
+
+    def start(self) -> str:
+        """prepare() + executeLogin，返回二维码内容。"""
+        self.prepare()
         qr_content = self._client.executeLogin()
         logger.info("ilink client started, QR content returned")
         return str(qr_content)
@@ -1189,21 +1285,36 @@ def _find_template_by_name(manager, name: str):
 - 手机发"帮我把签到和领体力都做了"，LLM 拆解为 `[#run 签到, #run 领体力]`，依次执行后回发汇总
 - 手机发含未知动作的自然语言，orchestrator 整批拒绝并回执"AI 输出指令不在白名单"
 
-### 阶段 2.6：GUI 集成与稳定性（1 天）
+### 阶段 2.6：GUI 集成与稳定性（1 天）✅ 已完成（2026-06-16）
 
 **目标**：远程驱动完整集成到 GUI，关闭时优雅退出。
 
 **动作**：
-1. 实现 `ui/dialogs/remote_status.py`（连接状态指示灯 + 二维码显示）
-2. 实现 `ui/dialogs/command_console.py`（指令执行日志，线程安全显示）
-3. 在 `MainGUI` 添加"远程驱动"菜单项
-4. `QApplication.aboutToQuit` 信号触发 `client.stop()` + `jvm.shutdown()`
-5. 白名单配置 UI（持久化到 `config/remote.yaml`）
+1. ✅ 实现 `ui/dialogs/remote_status_page.py`（QWidget，作为 sidebar 第 5 页）
+   - 连接状态指示灯（○ 未连接 / ◐ 连接中 / ● 已连接 / ✕ 错误）
+   - Start/Stop 按钮（按状态启用/禁用）
+   - 二维码显示（用 `qrcode` lib 渲染 QPixmap，lib 缺失时降级为文本 URL）
+   - LLM 配置段（启用复选框 + Anthropic/OpenAI 单选 + API key 密码模式 + model + base_url + 保存按钮）
+   - 底部按钮：白名单管理 + 日志控制台
+2. ✅ 实现 `ui/dialogs/command_console.py`（QDialog 只读 QTextEdit，订阅 `driver.log_message`）
+3. ✅ 实现 `ui/dialogs/whitelist_dialog.py`（QListWidget + 添加/删除 + 保存）
+4. ✅ 实现 `remote/driver.py` `RemoteDriver(QObject)` 控制器
+   - 信号：`state_changed` / `qr_ready` / `log_message` / `error`
+   - 状态机：`DISCONNECTED → CONNECTING → CONNECTED/ERROR → DISCONNECTED`
+   - `start()` 用 `QThread + _StartWorker` 包装 `executeLogin`，避免冻结 GUI（详见 §2.6 发现 2）
+   - `_StartWorker.run` 调用顺序：`client.prepare() → _wire_listeners() → client.start()`（详见 §2.6 发现 1）
+   - `client_factory` 模式：SDK jar 缺失时 GUI 仍可启动（详见 §2.6 发现 3）
+5. ✅ 在 `MainGUI` 添加"远程驱动"菜单项（icon 🔌，sidebar 第 5 页）
+6. ✅ `start_main_gui.py` 连 `app.aboutToQuit.connect(window.remote_driver.shutdown)`
+7. ✅ `RemoteDriver.shutdown()` 路径：`stop() → scheduler.stop() → JVMManager.shutdown()`（全 try/except 包裹，幂等）
 
 **验证**：
-- GUI 中"远程驱动"菜单可打开配置面板
-- 关闭 GUI 后 `tasklist | findstr java` 输出为空（JVM 干净退出）
-- 启动时如未配置远程，不阻塞 GUI
+- ✅ `uv run python scripts/demo_remote_driver.py` 输出 27/27 checks passed
+- ✅ `uv run pytest tests/unit/test_remote_driver.py` 19/19 通过（含状态机/白名单/LLM 配置/消息路由/shutdown）
+- ✅ `MainGUI` 实例化成功，remote_driver 初始状态 DISCONNECTED，content_stack 含 5 页
+- ✅ offscreen QPA 验证：未启动 JVM 时 shutdown 不抛异常（"JVM not initialized" 警告是预期）
+- ✅ SDK jar 缺失时 GUI 仍可启动（client_factory 延迟构造）
+- ⬜ 真实 SDK jar 部署后手动验证：GUI 中"远程驱动"菜单可打开，点 Start 弹二维码，扫码后状态变 ●，手机发消息触发 router，关 GUI 后 `tasklist | findstr java` 为空
 
 ---
 
@@ -1227,6 +1338,11 @@ def _find_template_by_name(manager, name: str):
 | **ilink jar 单独加载缺依赖**（Spike 发现） | `NoClassDefFoundError: org/slf4j/LoggerFactory` | `JVMManager.start` 把 `deps_dir/*.jar` 全部加入 classpath（详见 §2.4 发现 2、§5.1） |
 | **JAVA_HOME 未设导致找不到 jvm.dll**（Spike 发现） | `JVMNotFoundException` | `find_jvm_dll()` 三级 fallback：JAVA_HOME → `java -XshowSettings` → 默认（§5.1） |
 | **Python `isinstance`/`is` 在 JPype 桥接失效**（Spike 发现） | listener 注册校验误报失败 | 用 Java 反射 `class_.isInstance()` / `hashCode()` 比较（§2.4 发现 4） |
+| **listener 信号在 `executeLogin` 之后才 connect，丢失首次 `login_success`**（阶段 2.6 发现） | 用户已扫码但 driver 卡 CONNECTING | `client.start()` 拆为 `prepare() + start()`；`_StartWorker.run` 在两者之间 wire listener（§2.6 发现 1、§5.3） |
+| **`executeLogin` 阻塞 1~2s 冻结 GUI**（阶段 2.6 发现） | UI 卡顿 | `RemoteDriver.start()` 用 `QThread + _StartWorker` 包装，`qr_ready` 信号回主线程（§2.6 发现 2） |
+| **`ILinkSdkConfig.default()` 在 SDK jar 缺失时立即抛错**（阶段 2.6 发现） | GUI 实例化阶段崩溃 | `RemoteDriver` 接受 `client_factory` 零参 callable，延迟 client 构造到用户点 Start 时（§2.6 发现 3） |
+| **`anthropic`/`openai` 包未装但 LLM 配置 UI 想保存**（阶段 2.6 发现） | 保存触发 ImportError | `LlmConfig.enabled=False` 时 `validate()` 直接返回 None，不触发 import；启用时 orchestrator 保持 None（§2.6 发现 5） |
+| **shutdown 路径在未启动 JVM 时抛异常**（阶段 2.6 发现） | aboutToQuit 抛异常导致 GUI 退出失败 | `RemoteDriver.shutdown` 把 `scheduler.stop` / `JVMManager.shutdown` 全包 try/except；幂等（§5.3） |
 
 ---
 
@@ -1239,9 +1355,12 @@ def _find_template_by_name(manager, name: str):
 | wechat-ilink-sdk-java jar | 跟随上游 | 远程通信 SDK（从 ilink 项目取或 mvn install） | 2.1 |
 | anthropic | >=0.40 | Claude API SDK（阶段 2.5 二选一；**optional**，需 `uv pip install autogame-xcx[llm]`） | 2.5 |
 | openai | >=1.50 | OpenAI 兼容 API SDK（阶段 2.5 二选一；**optional**，同上） | 2.5 |
+| qrcode | >=7.4 | 二维码渲染（远程驱动 sidebar 页；**核心依赖**，非 optional） | 2.6 |
 | PyInstaller | >=6.0 | 打包含 jar（`--add-data "lib/ilink-sdk.jar;lib"`） | 发布 |
 
 > **阶段 2.5 实战发现**：`anthropic` / `openai` 不进核心 `[project].dependencies`，而是放 `[project.optional-dependencies].llm`——避免所有用户都被迫安装 ~50MB SDK。详见 §2.5 发现 3。
+
+> **阶段 2.6 实战发现**：`qrcode` 必须进核心依赖——远程驱动 sidebar 页用它把扫码 URL 渲染成 QPixmap，缺失会降级为文本显示但用户体验差。包仅 ~50KB 纯 Python，不显著增加安装开销。详见 §2.6 发现 4。
 
 ---
 
@@ -1259,6 +1378,8 @@ def _find_template_by_name(manager, name: str):
 | 2.5 | `uv run pytest tests/unit/test_remote_llm.py` | 29/29 通过（含 prompt / mock / orchestrator 解析+校验 / router 集成） |
 | 2.5 | `uv run python scripts/demo_remote_llm.py` | 24/24 checks passed（6 场景，用 MockLlmProvider 不调真实 API） |
 | 2.5 | 手机发"帮我把签到和领体力做了"（用户配置 API key 后真实链路） | LLM 拆解为 2 个指令顺序执行，完成后回发汇总报告 |
+| 2.6 | `uv run python scripts/demo_remote_driver.py` | 27/27 checks passed（含状态机 / 消息路由 / 白名单持久化 / LLM 配置校验 / shutdown 安全 / MainGUI 集成） |
+| 2.6 | `uv run pytest tests/unit/test_remote_driver.py` | 19/19 通过（MockILinkClient 桩，不依赖 JVM） |
 | 2.6 | 关闭 GUI | `tasklist \| findstr java` 输出为空（JVM 干净退出） |
 
 ---

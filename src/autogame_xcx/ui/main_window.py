@@ -1152,12 +1152,15 @@ class MainGUI(QMainWindow):
         self.template_manager = TemplateManager()
         self.game_executor = GameExecutor()
         self.report_generator = ReportGenerator()
-        
+
+        # 远程驱动（阶段 2.6）。client 走 factory 懒加载——SDK jar 缺失时不阻塞 GUI。
+        self.remote_driver = self._build_remote_driver()
+
         # 当前状态
         self.current_template = None
         self.current_screenshot = None
         self.marked_areas = []
-        
+
         self.init_ui()
     
     def init_ui(self):
@@ -1256,6 +1259,7 @@ class MainGUI(QMainWindow):
             ("模板管理", "📁", self.show_template_management),
             ("模板创建", "✨", self.show_template_creator),
             ("操作说明", "📖", self.show_user_guide),
+            ("远程驱动", "🔌", self.show_remote_driver),
         ]
         
         menu_container = QWidget()
@@ -1307,6 +1311,10 @@ class MainGUI(QMainWindow):
         # 操作说明页面
         self.guide_page = self.create_guide_page()
         self.content_stack.addWidget(self.guide_page)
+
+        # 远程驱动页面（阶段 2.6）
+        self.remote_page = self.create_remote_page()
+        self.content_stack.addWidget(self.remote_page)
     
     def create_intro_page(self):
         """创建项目介绍页面"""
@@ -1828,6 +1836,44 @@ class MainGUI(QMainWindow):
         """显示操作说明"""
         self.content_stack.setCurrentIndex(3)
         self.statusBar().showMessage("操作说明")
+
+    def show_remote_driver(self):
+        """显示远程驱动页面（阶段 2.6）"""
+        self.content_stack.setCurrentIndex(4)
+        self.statusBar().showMessage("远程驱动")
+
+    def create_remote_page(self):
+        """构造远程驱动页面（RemoteStatusPage 包装 driver）"""
+        from autogame_xcx.ui.dialogs.remote_status_page import RemoteStatusPage
+
+        return RemoteStatusPage(self.remote_driver, parent=self)
+
+    def _build_remote_driver(self):
+        """构造 RemoteDriver。SDK jar 缺失时降级到无 client_factory 模式（GUI 仍可显示，启动时报错）"""
+        from pathlib import Path
+
+        from autogame_xcx.remote.driver import RemoteDriver
+        from autogame_xcx.remote.llm_config import load_llm_config
+        from autogame_xcx.remote.session import SessionManager
+
+        def _factory():
+            from autogame_xcx.remote.ilink.client import ILinkClient
+
+            return ILinkClient()
+
+        data_dir = Path("data/config")
+        whitelist_path = data_dir / "remote_whitelist.json"
+        llm_path = data_dir / "remote_llm.json"
+        session = SessionManager.from_json(whitelist_path)
+        session._config.whitelist_path = whitelist_path  # noqa: SLF001 — 后绑定 path 以便 save 用
+        llm_config = load_llm_config(llm_path)
+        return RemoteDriver(
+            client_factory=_factory,
+            executor=self.game_executor,
+            template_manager=self.template_manager,
+            session=session,
+            llm_config=llm_config,
+        )
 
     # 功能实现方法
     def refresh_templates(self):

@@ -27,6 +27,8 @@ src/autogame_xcx/ocr/dgocr/visual.py
 src/autogame_xcx/platform/__init__.py
 src/autogame_xcx/platform/window_controller.py
 src/autogame_xcx/remote/__init__.py
+src/autogame_xcx/remote/driver.py
+src/autogame_xcx/remote/llm_config.py
 src/autogame_xcx/remote/router.py
 src/autogame_xcx/remote/session.py
 src/autogame_xcx/remote/commands/__init__.py

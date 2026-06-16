@@ -63,12 +63,14 @@ class ILinkClient:
         """直接访问底层 Java ILinkClient（高级用法）。"""
         return self._client
 
-    def start(self) -> str:
-        """启动 JVM + 构造 client + 执行登录，返回二维码内容（base64 image content）。
+    def prepare(self) -> None:
+        """启动 JVM + 实例化 listeners + 构造 Java client，但不调用 executeLogin。
 
-        Raises:
-            FileNotFoundError: jar 或依赖目录不存在
-            RuntimeError: Java 端构造/登录失败
+        用于在调 start() / request_qr_code() 之前先连接 listener 信号——
+        RemoteDriver 需要在 executeLogin 触发 SDK 长轮询前把
+        message_received / login_success / login_failure 信号接到自己的 slot。
+
+        幂等：JVM 与 listener 是 lazy singleton；client 已构造则跳过。
         """
         self.jvm.start()
         # 触发 listener lazy init（JVM 已启动，可安全创建）
@@ -76,6 +78,15 @@ class ILinkClient:
         _ = self.login_listener
         if self._client is None:
             self._client = self._build_client()
+
+    def start(self) -> str:
+        """启动 JVM + 构造 client + 执行登录，返回二维码内容（base64 image content）。
+
+        Raises:
+            FileNotFoundError: jar 或依赖目录不存在
+            RuntimeError: Java 端构造/登录失败
+        """
+        self.prepare()
         qr_content = self._client.executeLogin()
         logger.info("ilink client started, QR content returned (len=%d)", len(str(qr_content)))
         return str(qr_content)
@@ -86,11 +97,7 @@ class ILinkClient:
         Returns:
             (qr_url, qr_image_bytes)
         """
-        self.jvm.start()
-        _ = self.message_listener
-        _ = self.login_listener
-        if self._client is None:
-            self._client = self._build_client()
+        self.prepare()
         response = self._client.requestQRCode()
         qr_url = str(response.getQrcode())
         # QRCodeResponse.getQrcodeImgContent() 返回二维码图片字节

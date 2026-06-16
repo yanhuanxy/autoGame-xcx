@@ -15,6 +15,11 @@ def main():
     app = QApplication(sys.argv)
     window = MainGUI()
     window.show()
+
+    # 阶段 2.6：app 退出前优雅清理远程驱动（client.stop + scheduler.stop + JVM shutdown）
+    # 幂等；未启动远程驱动时也安全调用
+    app.aboutToQuit.connect(window.remote_driver.shutdown)
+
     print("🎉 主界面启动成功！")
     sys.exit(app.exec())
 
