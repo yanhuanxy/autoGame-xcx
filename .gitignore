@@ -23,7 +23,6 @@ data/*.db
 data/asset_auto/
 logs/
 .venv/
-tests/
 *.spec
 node_modules/
 /autogame_xcx.egg-info/

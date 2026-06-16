@@ -58,6 +58,8 @@ class Command(ABC):
     aliases: list[str] = []       # 别名（如 "run"、"执行"）
     description: str = ""
     usage: str = ""
+    queued_dispatch: bool = False  # True=走调度器串行队列（长任务，如 #run）；
+                                   # False=router 直接 dispatch（控制类指令如 #status/#stop）
 
     @abstractmethod
     def execute(self, ctx: CommandContext, args: str) -> CommandResult:

@@ -19,6 +19,7 @@ class RunTemplateCommand(Command):
     aliases = ["run", "执行", "运行"]
     description = "触发指定模板的自动化执行"
     usage = "#run <模板名>  例如：#run 签到"
+    queued_dispatch = True  # 长任务，必须走 scheduler 串行队列
 
     def execute(self, ctx: CommandContext, args: str) -> CommandResult:
         template_name = args.strip()

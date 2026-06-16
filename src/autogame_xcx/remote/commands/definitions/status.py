@@ -30,17 +30,22 @@ class StatusCommand(Command):
         else:
             lines.append("  ● 空闲（未执行过）")
 
-        # 队列信息（阶段 2.4 才接入 scheduler）
+        # 队列信息（阶段 2.4 接入 scheduler 后可用）
         scheduler = ctx.state.get("scheduler")
         if scheduler is not None:
             current_task = scheduler.current_running
             queue_len = scheduler.queue_length
+            processed = scheduler.processed_count
             if current_task is not None:
-                lines.append(f"  队列长度：{queue_len}（另 1 个正在执行）")
+                cur_user, cur_parsed = current_task
+                lines.append(f"  ▶ 正在执行：#{cur_parsed.raw[1:] if cur_parsed.raw else '?'}（来自 {cur_user}）")
+            if queue_len > 0:
+                lines.append(f"  队列等待：{queue_len} 个指令")
             else:
-                lines.append(f"  队列长度：{queue_len}")
+                lines.append("  队列等待：0")
+            lines.append(f"  累计完成：{processed} 个")
         else:
-            lines.append("  （调度器未启用，指令顺序执行）")
+            lines.append("  （调度器未启用，指令同步执行）")
 
         # 最近一次执行摘要
         summary = report.get("summary")
