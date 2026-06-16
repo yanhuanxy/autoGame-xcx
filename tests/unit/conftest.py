@@ -1,4 +1,4 @@
-"""阶段 2.3 指令系统的共享 pytest fixtures。
+"""阶段 2.3 / 2.5 共享 pytest fixtures。
 
 MockSender / MockTemplateManager / MockExecutor 模拟 core API，
 让指令测试不依赖 ilink SDK 或真实窗口。
@@ -14,6 +14,7 @@ from autogame_xcx.remote.commands import (
     CommandParser,
     build_default_registry,
 )
+from autogame_xcx.remote.llm import LLMOrchestrator, MockLlmProvider
 from autogame_xcx.remote.router import MessageRouter
 from autogame_xcx.remote.session import SessionManager
 
@@ -97,6 +98,7 @@ def make_router() -> Callable[..., tuple[MessageRouter, MockSender, MockExecutor
         executor_succeed: bool = True,
         allowed: set[str] | None = None,
         scheduler=None,
+        llm_orchestrator=None,
     ) -> tuple[MessageRouter, MockSender, MockExecutor]:
         sender = MockSender()
         executor = MockExecutor(succeed=executor_succeed)
@@ -113,7 +115,57 @@ def make_router() -> Callable[..., tuple[MessageRouter, MockSender, MockExecutor
             template_manager=tm,
             sender=sender,
             scheduler=scheduler,
+            llm_orchestrator=llm_orchestrator,
         )
         return router, sender, executor
+
+    return _factory
+
+
+class MockScheduler:
+    """轻量调度器桩：不消费队列，只记录 enqueue 调用便于断言。
+
+    真实的 CommandQueue 会异步消费，编排器单元测试不需要异步行为，
+    用这个桩更易断言"被入队了 N 次 / 第 i 次入队是什么指令"。
+    """
+
+    def __init__(self) -> None:
+        self.enqueued: list[tuple[str, object]] = []
+
+    def enqueue(self, user_id: str, parsed: object) -> int:
+        self.enqueued.append((user_id, parsed))
+        return len(self.enqueued)
+
+
+@pytest.fixture
+def make_orchestrator() -> Callable[..., tuple[LLMOrchestrator, MockLlmProvider, MockSender, MockScheduler]]:
+    """工厂：构造 (orchestrator, mock_provider, sender, mock_scheduler)。
+
+    用法：
+        def test_xxx(make_orchestrator):
+            orch, provider, sender, sched = make_orchestrator(
+                responses=['[{"action":"run","args":"签到"}]'],
+            )
+            orch.handle_natural_language("wxid_alice", "帮我把签到做了")
+            assert len(sched.enqueued) == 1
+    """
+
+    def _factory(
+        *,
+        responses: list[str] | None = None,
+        sender: MockSender | None = None,
+    ) -> tuple[LLMOrchestrator, MockLlmProvider, MockSender, MockScheduler]:
+        provider = MockLlmProvider(responses=responses)
+        if sender is None:
+            sender = MockSender()
+        scheduler = MockScheduler()
+        registry = build_default_registry()
+        orchestrator = LLMOrchestrator(
+            provider=provider,
+            registry=registry,
+            scheduler=scheduler,
+            sender=sender,
+        )
+        return orchestrator, provider, sender, scheduler
 
     return _factory

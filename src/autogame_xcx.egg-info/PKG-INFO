@@ -22,6 +22,9 @@ Requires-Dist: onnxruntime>=1.17
 Requires-Dist: shapely>=2.0
 Requires-Dist: pyclipper>=1.3
 Requires-Dist: jpype1>=1.7.1
+Provides-Extra: llm
+Requires-Dist: anthropic>=0.40; extra == "llm"
+Requires-Dist: openai>=1.50; extra == "llm"
 Dynamic: license-file
 
 # autoGame-LZ

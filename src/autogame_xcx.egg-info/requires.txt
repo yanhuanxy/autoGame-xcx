@@ -13,3 +13,7 @@ jpype1>=1.7.1
 
 [:platform_system == "Windows"]
 pywin32>=310
+
+[llm]
+anthropic>=0.40
+openai>=1.50

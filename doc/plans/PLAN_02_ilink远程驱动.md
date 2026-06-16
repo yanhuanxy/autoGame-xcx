@@ -7,10 +7,10 @@
 
 > **进度状态**：
 > - ✅ 阶段 2.1 JPype Spike（2026-06-15 完成，17/17 检查通过）
-> - 🚧 阶段 2.2 消息接收通道（进行中）
-> - ⬜ 阶段 2.3 基础指令系统
-> - ⬜ 阶段 2.4 指令调度器
-> - ⬜ 阶段 2.5 大模型编排
+> - ✅ 阶段 2.2 消息接收通道（完成）
+> - ✅ 阶段 2.3 基础指令系统（完成，单元测试 42/42）
+> - ✅ 阶段 2.4 指令调度器（完成，24/24 检查通过）
+> - ✅ 阶段 2.5 大模型编排（2026-06-16 完成，29/29 单元测试 + 24/24 演示脚本）
 > - ⬜ 阶段 2.6 GUI 集成与稳定性
 
 ---
@@ -190,6 +190,74 @@ JPype 的 Python ↔ Java 代理桥接有几个非直觉行为，直接影响 li
 - `message_listener.py` 的 listener 类不能继承 QObject（信号必须放独立 carrier）
 - 单元测试里检查"listener 是否实现了接口"要用 `class_.isInstance()`，不能用 `isinstance()`
 - 阶段 2.4 的 CommandQueue 单元测试也要避免 `is` 比较 Java 对象
+
+### 2.5 阶段 2.5 实战发现（2026-06-16）
+
+阶段 2.5 完成时发现原文档 §5.11 的设计在落地时有 4 处需要修订。这些发现已回写到相关章节。
+
+#### 发现 1：LLM 输出经常违反"只输出 JSON"约束，必须容错解析
+
+**症状**：即使用 system prompt 强约束"只输出 JSON 数组、不要解释"，主流 LLM（Claude / GPT-4o / DeepSeek）仍会在 ~10% 调用中：
+- 把 JSON 包在 ```` ```json ... ``` ```` 围栏里
+- 在 JSON 前后加"好的，输出如下："/"以上是建议"等口水
+- 直接返回自然语言（"对不起，我无法处理这个请求"）
+
+**解决**：在 `orchestrator.py` 加 `_extract_json_array(text)` 辅助函数：
+1. 剥离 ``` 围栏
+2. 取首个 `[` 到末尾 `]` 之间的子串
+3. 找不到方括号 → 返回 None，上层报"格式异常"
+4. 找到 → `json.loads`；解析失败 → 报"JSON 解析失败"
+
+**对单元测试的影响**：`test_extract_json_array` 参数化覆盖 7 种输入（含围栏、含口水、纯自然语言、空串、单对象），见 `tests/unit/test_remote_llm.py`。
+
+**对 §5.11 的回写**：原 `orchestrator._parse_response` 直接 `json.loads(response)`，已修订为先走 `_extract_json_array` 容错。
+
+#### 发现 2：白名单二次校验必须"整批拒绝"，不能"跳过未知项"
+
+**症状**：原 §5.11 暗示 LLM 输出 `[{"action":"run","args":"签到"},{"action":"delete_database","args":"all"}]` 时跳过 delete_database、保留 run 签到。
+
+**问题**：LLM 一次输出多个指令表示"批量规划"，半执行状态难以回滚——用户看到"签到完成 + delete 被拒"会误以为意图没完整传达，反复重发反而触发更多签到。
+
+**解决**：`orchestrator._parse_and_validate` 校验任何一项失败（解析错误、字段缺失、action 不在 registry）→ **整批拒绝**、不入队任何指令、回执错误描述。单测覆盖 `test_orchestrator_rejects_unknown_action` / `test_orchestrator_rejects_missing_action` / `test_orchestrator_rejects_non_string_args`。
+
+**对 §7 风险表的影响**：原 "LLM 拆解指令失败/越界" 对策 "JSON Schema 校验 + 指令白名单二次验证" 已细化为"白名单二次校验 + **整批拒绝**策略"。
+
+#### 发现 3：`anthropic` / `openai` 不能进核心 `dependencies`
+
+**症状**：在 `pyproject.toml [project].dependencies` 里写 `anthropic` / `openai` 会导致：
+- 所有用户都被强制安装 ~50MB 的 SDK，即使用户不需要 LLM 编排
+- 离线部署时这两个包会拖慢 `uv sync`
+
+**解决**：新增 `[project.optional-dependencies].llm`：
+```toml
+[project.optional-dependencies]
+llm = ["anthropic>=0.40", "openai>=1.50"]
+```
+用户按需 `uv pip install autogame-xcx[llm]`。
+
+**AnthropicProvider / OpenAIProvider 的 import 策略**：
+- 不在 `remote/llm/__init__.py` 里 import 它们（否则 import 包就触发 ImportError）
+- 子模块内 `def __init__` 才 `import anthropic` / `import openai`，未安装时报清晰错误：
+  > `anthropic 包未安装；请运行 uv pip install anthropic 或 uv pip install autogame-xcx[llm]`
+
+**对 §8 依赖工具链的影响**：原表把 anthropic/openai 列为常规依赖；已修订为 optional `[llm]` extras。
+
+#### 发现 4：单元测试用 `MockLlmProvider` 桩，不调真实 API
+
+**症状**：原 §5.11 暗示 orchestrator 测试要 mock LLM 调用，但没明确桩的形态。
+
+**问题**：真实 API 调用需要 key + 网络 + 速率限制 + 输出不确定性，无法纳入 `pytest tests/unit/`。
+
+**解决**：`remote/llm/provider.py` 内置 `MockLlmProvider`：
+- 接收预设响应队列 `responses: list[str]`
+- `chat()` 每次出队一个；耗尽后返回 `""`（不抛 IndexError，便于后续断言）
+- 记录 `calls: list[list[dict]]` 让测试断言 prompt 内容
+
+**对 §9 验证方式的影响**：阶段 2.5 增加了两层验证：
+- 单元测试：`pytest tests/unit/test_remote_llm.py`（29/29 通过，用 MockLlmProvider）
+- 演示脚本：`uv run python scripts/demo_remote_llm.py`（24/24 通过，6 个场景覆盖 happy path / 越权 / 乱码 / 围栏 / router 集成 / provider 异常）
+
+真实 LLM 链路（用户配置 API key 后手动验证）作为阶段 2.6 GUI 集成时的端到端检查项。
 
 ---
 
@@ -817,11 +885,17 @@ class MessageRouter:
             self.llm_orchestrator.handle_natural_language(user_id, text)
 ```
 
-### 5.11 `remote/llm/orchestrator.py`（后续阶段）：自然语言编排
+### 5.11 `remote/llm/orchestrator.py`：自然语言编排
+
+> **阶段 2.5 实战修订**（详见 §2.5）：原 sketch 有 4 处偏差已修订：
+> 1. 增加返回类型 `OrchestrationResult`（含 success / message / commands），便于单测断言
+> 2. `_parse_and_validate` 走 `_extract_json_array` 容错（容忍 LLM 输出围栏 / 口水）
+> 3. 白名单二次校验**整批拒绝**（任一项失败 → 全部不入队）
+> 4. 单测用 `MockLlmProvider` 桩，不调真实 API
 
 ```python
 """自然语言 → 指令队列编排。
-用户发"帮我把签到和领体力做了"
+用户发"帮我把签到和领体力都做了"
   ↓ LLM 分析
 LLM 拆解为 [#run 签到, #run 领体力]
   ↓ 顺序执行
@@ -829,14 +903,21 @@ LLM 拆解为 [#run 签到, #run 领体力]
 """
 import json
 import logging
-from typing import Optional
+from dataclasses import dataclass
 
-from autogame_xcx.remote.llm.provider import LlmProvider
-from autogame_xcx.remote.llm.prompt_templates import build_orchestration_prompt
+from autogame_xcx.remote.commands.parser import ParsedCommand
 from autogame_xcx.remote.commands.registry import CommandRegistry
-from autogame_xcx.remote.scheduler.queue import CommandQueue
+from autogame_xcx.remote.llm.prompt_templates import build_orchestration_prompt
+from autogame_xcx.remote.llm.provider import LlmProvider
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class OrchestrationResult:
+    success: bool
+    message: str
+    commands: list[ParsedCommand]
 
 
 class LLMOrchestrator:
@@ -844,48 +925,106 @@ class LLMOrchestrator:
         self,
         provider: LlmProvider,
         registry: CommandRegistry,
-        scheduler: CommandQueue,
+        scheduler,
         sender,
-    ):
+    ) -> None:
         self.provider = provider
         self.registry = registry
         self.scheduler = scheduler
         self.sender = sender
 
-    def handle_natural_language(self, user_id: str, text: str) -> None:
+    def handle_natural_language(
+        self, user_id: str, text: str
+    ) -> OrchestrationResult:
+        """编排 + 校验 + 入队 + 回执；返回 OrchestrationResult 用于断言。"""
+        messages = build_orchestration_prompt(text, self.registry.all_commands())
         try:
-            prompt = build_orchestration_prompt(text, self.registry.all_commands())
-            response = self.provider.chat([{"role": "user", "content": prompt}])
-            commands = self._parse_response(response)
-            if not commands:
-                self.sender.send_text(user_id, "未能理解您的指令，请用 #help 查看可用指令")
-                return
-            for cmd in commands:
-                self.scheduler.enqueue(user_id, cmd)
-            self.sender.send_text(
-                user_id,
-                f"已为您规划 {len(commands)} 个指令，正在顺序执行...",
-            )
+            raw_response = self.provider.chat(messages)
         except Exception as e:
-            logger.exception("LLM orchestration failed")
-            self.sender.send_text(user_id, f"AI 编排失败：{e}")
+            logger.exception("LLM provider.chat crashed")
+            return self._fail(user_id, f"AI 调用失败：{e}", [])
 
-    def _parse_response(self, response: str) -> list:
-        """解析 LLM 返回的 JSON 指令序列。
-        期望格式：[{"action": "run", "args": "签到"}, ...]"""
+        commands, parse_error = self._parse_and_validate(raw_response)
+        if parse_error is not None:
+            logger.warning("LLM response rejected: %s; raw_head=%r",
+                           parse_error, raw_response[:200])
+            return self._fail(user_id, parse_error, [])
+
+        if not commands:
+            return self._fail(user_id,
+                              "未能理解您的请求；输入 #help 查看可用指令", [])
+
+        for cmd in commands:
+            try:
+                self.scheduler.enqueue(user_id, cmd)
+            except Exception as e:
+                logger.exception("scheduler.enqueue crashed")
+                return self._fail(user_id, f"指令入队失败：{e}", [])
+
+        msg = f"已为您规划 {len(commands)} 个指令，正在顺序执行..."
+        self._reply(user_id, msg)
+        return OrchestrationResult(success=True, message=msg, commands=list(commands))
+
+    def _parse_and_validate(
+        self, raw_response: str
+    ) -> tuple[list[ParsedCommand], str | None]:
+        """解析 + 白名单校验；任一项失败整批拒绝。"""
+        json_str = _extract_json_array(raw_response)
+        if json_str is None:
+            return [], "AI 输出格式异常（未找到 JSON 数组），请改用 # 指令"
         try:
-            data = json.loads(response)
-            parsed = []
-            for item in data:
-                action = item.get("action", "")
-                args = item.get("args", "")
-                # 转换为 ParsedCommand 入队
-                from autogame_xcx.remote.commands.parser import ParsedCommand
-                parsed.append(ParsedCommand(name=action.upper(), args=args, raw=f"#{action} {args}"))
-            return parsed
-        except (json.JSONDecodeError, KeyError) as e:
-            logger.warning("Failed to parse LLM response: %s", e)
-            return []
+            data = json.loads(json_str)
+        except json.JSONDecodeError as e:
+            return [], f"AI 输出 JSON 解析失败：{e}"
+        if not isinstance(data, list):
+            return [], "AI 输出应为 JSON 数组"
+
+        commands: list[ParsedCommand] = []
+        for i, item in enumerate(data):
+            if not isinstance(item, dict):
+                return [], f"AI 输出第 {i + 1} 项不是对象"
+            action = item.get("action")
+            args = item.get("args", "")
+            if not isinstance(action, str) or not action.strip():
+                return [], f"AI 输出第 {i + 1} 项缺少 action 字段"
+            if not isinstance(args, str):
+                return [], f"AI 输出第 {i + 1} 项 args 必须是字符串"
+            canonical = self.registry.resolve_alias(action)
+            if canonical is None:
+                return [], f"AI 输出指令不在白名单：#{action}"
+            commands.append(ParsedCommand(
+                name=canonical, args=args, raw=f"#{action} {args}".strip(),
+            ))
+        return commands, None
+
+    def _fail(self, user_id, message, commands) -> OrchestrationResult:
+        self._reply(user_id, message)
+        return OrchestrationResult(success=False, message=message, commands=commands)
+
+    def _reply(self, user_id: str, text: str) -> None:
+        try:
+            self.sender.send_text(user_id, text)
+        except Exception:
+            logger.exception("Failed to send reply to %s", user_id)
+
+
+def _extract_json_array(text: str) -> str | None:
+    """从 LLM 文本中抽取首个 JSON 数组（容错：剥离围栏、取首 [ 末 ]）。"""
+    text = (text or "").strip()
+    if not text:
+        return None
+    if text.startswith("```"):  # 剥离 Markdown 围栏
+        lines = text.splitlines()
+        if lines and lines[0].startswith("```"):
+            lines = lines[1:]
+        if lines and lines[-1].strip().startswith("```"):
+            lines = lines[:-1]
+        text = "\n".join(lines).strip()
+    start = text.find("[")
+    end = text.rfind("]")
+    if start == -1 or end == -1 or end <= start:
+        return None
+    return text[start : end + 1]
 ```
 
 ### 5.12 `remote/commands/definitions/run_template.py`：示例指令
@@ -1027,23 +1166,28 @@ def _find_template_by_name(manager, name: str):
 - 连续发 3 个 `#run` 指令，依次执行不冲突
 - `#status` 能返回当前正在执行的指令 + 队列剩余数量
 
-### 阶段 2.5：大模型编排（2~3 天，可独立迭代）
+### 阶段 2.5：大模型编排（2~3 天，可独立迭代）✅ 已完成（2026-06-16）
 
 **目标**：自然语言指令被 LLM 拆解为指令队列。
 
 **动作**：
-1. 实现 `remote/llm/provider.py`（抽象接口）
-2. 实现 `remote/llm/anthropic_provider.py`（Claude，依赖 `anthropic` 包）
-3. 实现 `remote/llm/openai_provider.py`（OpenAI 兼容，依赖 `openai` 包）
-4. 实现 `remote/llm/prompt_templates.py`（含可用指令清单 + 输出 JSON 格式约束）
-5. 实现 `remote/llm/orchestrator.py`（编排 + JSON Schema 校验 + 指令白名单二次验证）
-6. router 中接入 orchestrator，非 `#` 消息转 LLM
+1. ✅ 实现 `remote/llm/provider.py`（抽象 `LlmProvider` Protocol + `MockLlmProvider` 桩）
+2. ✅ 实现 `remote/llm/anthropic_provider.py`（Claude，可选依赖 `anthropic` 包）
+3. ✅ 实现 `remote/llm/openai_provider.py`（OpenAI 兼容，可选依赖 `openai` 包）
+4. ✅ 实现 `remote/llm/prompt_templates.py`（含可用指令清单 + JSON 输出格式约束 + 示例）
+5. ✅ 实现 `remote/llm/orchestrator.py`（编排 + JSON 容错解析 + 白名单二次校验 + 整批拒绝）
+6. ✅ router 中接入 orchestrator，非 `#` 消息转 LLM（`router.llm_orchestrator` 已预留钩子）
 
-**验证**：
-- 手机发"帮我把签到和领体力做了"
-- LLM 拆解为 `[#run 签到, #run 领体力]`
-- 依次执行后回发汇总报告
-- LLM 输出非白名单指令时被拒绝（安全防线）
+**验证（已完成）**：
+- ✅ 单元测试：`uv run pytest tests/unit/test_remote_llm.py` — 29/29 通过
+- ✅ 演示脚本：`uv run python scripts/demo_remote_llm.py` — 24/24 通过（6 场景：happy path / 越权拒绝 / 乱码拒绝 / Markdown 围栏容错 / router 集成 / provider 异常隔离）
+
+**验证（用户配置 API key 后手动跑真实链路）**：
+- 安装 optional 依赖：`uv pip install autogame-xcx[llm]`
+- 配置 `ANTHROPIC_API_KEY` 或 `OPENAI_API_KEY`
+- 在 `scripts/demo_remote_llm.py` 末尾加一段：把 `MockLlmProvider` 换成真实 provider，跑同样的场景
+- 手机发"帮我把签到和领体力都做了"，LLM 拆解为 `[#run 签到, #run 领体力]`，依次执行后回发汇总
+- 手机发含未知动作的自然语言，orchestrator 整批拒绝并回执"AI 输出指令不在白名单"
 
 ### 阶段 2.6：GUI 集成与稳定性（1 天）
 
@@ -1075,7 +1219,7 @@ def _find_template_by_name(manager, name: str):
 | 远程指令注入（任意人发消息触发自动化） | 安全风险 | 用户白名单（from_user_id 校验）；指令权限分级（admin / user） |
 | ilink SDK 升级破坏 Python 集成 | 调用失败 | SDK 版本锁定到 `config/ilink.py`；启动时探测版本不匹配告警 |
 | 同一窗口并发执行（多指令并发触发） | 自动化混乱 | CommandQueue 单线程消费，强制串行 |
-| LLM 拆解指令失败/越界 | 执行错误指令 | LLM 输出 JSON Schema 校验 + 指令白名单二次验证 |
+| LLM 拆解指令失败/越界 | 执行错误指令 | LLM 输出 JSON 容错解析（`_extract_json_array`）+ 白名单二次校验 + **整批拒绝**策略（详见 §2.5 发现 1/2、§5.11） |
 | SDK jar 路径错误或缺失 | 启动崩溃 | `JVMManager.start` 显式检查 jar 存在，缺失时报清晰错误 |
 | Java 异常丢失堆栈 | 调试困难 | `send_text` 等方法外层 try/except，把 `java.lang.Throwable` 转为 `AutogameError` 并保留 cause |
 | SDK 内部 AWT 线程与 PyQt6 冲突 | GUI 死锁 | JVM 启动参数加 `-Djava.awt.headless=true`（SDK 不需要 GUI） |
@@ -1093,9 +1237,11 @@ def _find_template_by_name(manager, name: str):
 | jpype1 | >=1.5 | Python 调 Java 的核心库 | 2.1 |
 | JDK | 17+ | JVM（用户机预装） | 2.1 |
 | wechat-ilink-sdk-java jar | 跟随上游 | 远程通信 SDK（从 ilink 项目取或 mvn install） | 2.1 |
-| anthropic | latest | Claude API SDK（阶段 2.5 二选一） | 2.5 |
-| openai | latest | OpenAI 兼容 API SDK（阶段 2.5 二选一） | 2.5 |
+| anthropic | >=0.40 | Claude API SDK（阶段 2.5 二选一；**optional**，需 `uv pip install autogame-xcx[llm]`） | 2.5 |
+| openai | >=1.50 | OpenAI 兼容 API SDK（阶段 2.5 二选一；**optional**，同上） | 2.5 |
 | PyInstaller | >=6.0 | 打包含 jar（`--add-data "lib/ilink-sdk.jar;lib"`） | 发布 |
+
+> **阶段 2.5 实战发现**：`anthropic` / `openai` 不进核心 `[project].dependencies`，而是放 `[project.optional-dependencies].llm`——避免所有用户都被迫安装 ~50MB SDK。详见 §2.5 发现 3。
 
 ---
 
@@ -1105,10 +1251,14 @@ def _find_template_by_name(manager, name: str):
 |---|---|---|
 | 2.1 | `uv run python tests/manual/test_jpype_spike.py` | 输出 `JVM started, currentTimeMillis=...` |
 | 2.2 | `uv run autogame-gui` 启动后扫码，手机发 `#test` | GUI 显示 `收到：#test from <user_id>` |
+| 2.3 | `uv run pytest tests/unit/test_remote_commands.py tests/unit/test_remote_parser.py tests/unit/test_remote_registry.py tests/unit/test_remote_session.py tests/unit/test_remote_router.py` | 全部通过（42 用例） |
 | 2.3 | 手机发 `#list` | Python 回发可用模板列表 |
 | 2.3 | 手机发 `#run 签到模板` | 本地执行签到，完成后回发"签到完成：金币+100" |
+| 2.4 | `uv run python scripts/demo_remote_scheduler.py` | 输出 24/24 checks passed |
 | 2.4 | 连发 3 个 `#run` | `#status` 返回 "队列中：2，正在执行：第1个" |
-| 2.5 | 手机发"帮我把签到和领体力做了" | LLM 拆解为 2 个指令顺序执行，完成后回发汇总报告 |
+| 2.5 | `uv run pytest tests/unit/test_remote_llm.py` | 29/29 通过（含 prompt / mock / orchestrator 解析+校验 / router 集成） |
+| 2.5 | `uv run python scripts/demo_remote_llm.py` | 24/24 checks passed（6 场景，用 MockLlmProvider 不调真实 API） |
+| 2.5 | 手机发"帮我把签到和领体力做了"（用户配置 API key 后真实链路） | LLM 拆解为 2 个指令顺序执行，完成后回发汇总报告 |
 | 2.6 | 关闭 GUI | `tasklist \| findstr java` 输出为空（JVM 干净退出） |
 
 ---
