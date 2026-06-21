@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
 from PyQt6.QtCore import QObject, QThread, pyqtSignal, pyqtSlot
@@ -40,7 +41,7 @@ from autogame_xcx.remote.commands import (
     build_default_registry,
 )
 from autogame_xcx.remote.llm import LLMOrchestrator
-from autogame_xcx.remote.llm_config import LlmConfig
+from autogame_xcx.remote.llm_config import LlmConfig, save_llm_config
 from autogame_xcx.remote.router import MessageRouter
 from autogame_xcx.remote.scheduler.queue import CommandQueue
 from autogame_xcx.remote.session import SessionManager
@@ -104,6 +105,7 @@ class RemoteDriver(QObject):
         template_manager: Any = None,
         session: SessionManager | None = None,
         llm_config: LlmConfig | None = None,
+        llm_config_path: Path | None = None,
         parent: QObject | None = None,
     ) -> None:
         super().__init__(parent=parent)
@@ -115,6 +117,8 @@ class RemoteDriver(QObject):
         self._template_manager = template_manager
         self._session = session or SessionManager()
         self._llm_config = llm_config or LlmConfig()
+        # 若提供 path，update_llm_config 会自动落盘；测试场景可不传，仅在内存生效。
+        self._llm_config_path = llm_config_path
         self._state = STATE_DISCONNECTED
         self._wired = False
 
@@ -219,9 +223,12 @@ class RemoteDriver(QObject):
     def update_llm_config(self, config: LlmConfig) -> str | None:
         """更新 LLM 配置并重建 orchestrator。
 
+        若构造时传了 llm_config_path，配置应用成功后会自动落盘。
+
         Returns:
-            None — 配置已生效；
-            str  — 配置不可用（validate 失败），保持原配置不变。
+            None — 配置已生效（落盘成功 或 不需要落盘）；
+            str  — 配置不可用（validate 失败），保持原配置不变；或落盘失败（此时内存
+                   已更新，但下次启动会回到旧配置）。
         """
         err = config.validate()
         if err is not None:
@@ -230,6 +237,12 @@ class RemoteDriver(QObject):
         # 重建 router（orchestrator 可能从无→有 或 有→无 切换）
         self._router = self._build_router()
         self._scheduler._consumer = self._router._dispatch_and_reply  # noqa: SLF001
+        if self._llm_config_path is not None:
+            try:
+                save_llm_config(config, self._llm_config_path)
+            except (OSError, ValueError) as e:
+                logger.warning("Failed to persist LLM config: %s", e)
+                return f"配置已应用但保存失败：{e}"
         return None
 
     # -------------------- 发消息（作为 router 的 sender）--------------------

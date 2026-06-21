@@ -1,0 +1,8 @@
+{
+  "enabled": false,
+  "provider": "anthropic",
+  "api_key": "b7a2ad9ce23841e1b4b4b70b8303c900.vGuFpNpsh8iTfa2l",
+  "model": "glm-4.7-flashx",
+  "base_url": "https://open.bigmodel.cn/api/anthropic",
+  "extra": {}
+}

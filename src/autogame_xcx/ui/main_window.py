@@ -1873,6 +1873,7 @@ class MainGUI(QMainWindow):
             template_manager=self.template_manager,
             session=session,
             llm_config=llm_config,
+            llm_config_path=llm_path,
         )
 
     # 功能实现方法

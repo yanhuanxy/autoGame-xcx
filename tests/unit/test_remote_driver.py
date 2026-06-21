@@ -282,6 +282,55 @@ def test_update_llm_config_valid_openai_no_import(make_driver) -> None:  # type:
     assert driver.router.llm_orchestrator is None
 
 
+def test_update_llm_config_persists_when_path_provided(make_driver, tmp_path) -> None:  # type: ignore[no-untyped-def]
+    """传 llm_config_path 时，update_llm_config 应自动落盘——下次 load 能看到。"""
+    from autogame_xcx.remote.llm_config import load_llm_config
+
+    path = tmp_path / "remote_llm.json"
+    client = MockILinkClient()
+    driver = RemoteDriver(
+        client=client,
+        executor=MockExecutor(),
+        session=SessionManager(allowed={"wxid_alice"}),
+        llm_config=LlmConfig(),
+        llm_config_path=path,
+    )
+    cfg = LlmConfig(
+        enabled=True,
+        provider=PROVIDER_OPENAI,
+        api_key="sk-test",
+        model="gpt-4o",
+        base_url="https://api.deepseek.com/v1",
+    )
+    err = driver.update_llm_config(cfg)
+    assert err is None
+    assert path.exists(), "llm_config_path 不为 None 时，update 应自动落盘"
+
+    # 重新 load（模拟下次启动）
+    reloaded = load_llm_config(path)
+    assert reloaded.enabled is True
+    assert reloaded.api_key == "sk-test"
+    assert reloaded.model == "gpt-4o"
+    assert reloaded.base_url == "https://api.deepseek.com/v1"
+
+
+def test_update_llm_config_skip_persist_when_path_none(make_driver, tmp_path) -> None:  # type: ignore[no-untyped-def]
+    """不传 llm_config_path 时（测试场景），update 只更新内存——文件不会出现。"""
+    path = tmp_path / "remote_llm.json"  # 仅用作"文件不该存在"的探测
+    driver, _, _ = make_driver()
+    cfg = LlmConfig(
+        enabled=True,
+        provider=PROVIDER_OPENAI,
+        api_key="sk-test",
+        model="gpt-4o",
+    )
+    err = driver.update_llm_config(cfg)
+    assert err is None
+    assert not path.exists()
+    # 内存里仍生效
+    assert driver.llm_config.api_key == "sk-test"
+
+
 def test_load_llm_config_nonexistent_returns_default(tmp_path) -> None:
     cfg = load_llm_config(tmp_path / "missing.json")
     assert cfg.enabled is False
