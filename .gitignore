@@ -36,3 +36,13 @@ __pycache__/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+
+### Secrets ###
+# LLM 配置含明文 API key，禁止入库；仅保留 example 模板
+data/config/remote_llm.json
+.env
+.env.local
+
+### Captures ###
+# 抓包数据可能含账号 token / 签名样本，禁止入库
+data/captures/

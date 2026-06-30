@@ -1,117 +1,141 @@
+"""OCR 引擎封装：基于自研 DGOCR 提供文字查找能力。
+
+DGOCR.run 返回结构：
+    batch_ocr_result: list[list[list[box, (text, score)]]]
+    - 外层：每张图片一个元素
+    - 中层：该图片的所有识别结果
+    - 内层：[box, (text, score)]
+        - box：4 个点坐标，shape (4, 2)
+        - text：识别出的字符串
+        - score：置信度（0.0 ~ 1.0）
+"""
+import logging
 import os
 
-import pyautogui
-import win32gui
-
-from autogame_xcx.utils.opencv import CvTool
-from autogame_xcx.ocr.dgocr.dgocr import DGOCR
 import cv2
 import numpy as np
+import pyautogui
+import win32gui
+from PIL import Image
+
+from autogame_xcx.ocr.dgocr.dgocr import DGOCR
+from autogame_xcx.utils.opencv import CvTool
+
+logger = logging.getLogger(__name__)
 
 
-def find_text_in_window(text_to_find, hwnd, lang='chi_sim'):
-    """
-    在指定窗口内查找特定文字，并返回其中心坐标。
-    :param text_to_find: 要查找的文字字符串。
-    :param hwnd: 目标窗口的句柄。
-    :param lang: Tesseract OCR 使用的语言包 (chi_sim 代表简体中文)。
-    :return: 如果找到文字，返回其在窗口内的中心坐标 (x, y)；否则返回 None。
+# DGOCR 模型路径（基于项目根的相对路径）
+_REC_PATH = r"models/duguang-ocr-onnx-v2/base_seglink++/recognition_model_general"
+_DET_PATH = r"models/duguang-ocr-onnx-v2/base_seglink++/detection_model_general/model_1600x1600.onnx"
+_IMG_SIZE = 1600
+_MODEL_TYPE = "seglink"
+_CPU_THREAD_NUM = 4
+_DEVICE = "cpu"
+
+# 置信度阈值：低于此值的识别结果视为噪声
+_CONFIDENCE_THRESHOLD = 0.6
+
+# 单例：避免每次调用都重新加载 ONNX 模型（加载耗时数秒）
+_OCR_SINGLETON: DGOCR | None = None
+
+
+def _get_ocr() -> DGOCR:
+    global _OCR_SINGLETON
+    if _OCR_SINGLETON is None:
+        _OCR_SINGLETON = DGOCR(
+            rec_path=_REC_PATH,
+            det_path=_DET_PATH,
+            img_size=_IMG_SIZE,
+            model_type=_MODEL_TYPE,
+            device=_DEVICE,
+            cpu_thread_num=_CPU_THREAD_NUM,
+        )
+    return _OCR_SINGLETON
+
+
+def find_text_in_window(text_to_find: str, hwnd: int) -> tuple[int, int] | None:
+    """在指定窗口内查找文字，返回中心坐标（相对窗口左上角）。
+
+    Args:
+        text_to_find: 要查找的文字字符串。
+        hwnd: 目标窗口的句柄。
+
+    Returns:
+        找到时返回 (x, y) 中心坐标；未找到返回 None。
     """
     try:
-        # 1. 获取窗口位置和大小
         left, top, right, bottom = win32gui.GetWindowRect(hwnd)
         width = right - left
         height = bottom - top
 
-        # 2. 对窗口区域进行截图
         screenshot = pyautogui.screenshot(region=(left, top, width, height))
-        save_dir = "./data"  # 目标目录
-        if not os.path.exists(save_dir):
-            os.makedirs(save_dir)  # 递归创建目录
+        screenshot = screenshot.convert("RGB")
 
-        save_path = os.path.join(save_dir, "region_screenshot.png")
-        screenshot.save(save_path)
-        screenshot.convert("RGB")
-        # 将 PIL.Image 转换为 OpenCV 格式的 BGR 图像
-        image_cv = cv2.cvtColor(np.array(screenshot), cv2.COLOR_RGB2BGR)
-        # 获取图像的宽度和高度
-        img_height, img_width = image_cv.shape[:2]
-
+        # 仅保留右下区域用于识别（与原逻辑保持一致：80%~100% 宽，40%~80% 高）
+        img_cv = cv2.cvtColor(np.array(screenshot), cv2.COLOR_RGB2BGR)
+        img_height, img_width = img_cv.shape[:2]
         left_crop = int(img_width * 0.8)
         right_crop = img_width
         top_crop = int(img_height * 0.4)
         bottom_crop = int(img_height * 0.8)
 
-        # 创建一个新的白色画布，与原始图像大小相同
-        white_canvas = np.ones_like(image_cv) * 255  # 白色（RGB：255, 255, 255）
+        white_canvas = np.ones_like(img_cv) * 255
+        white_canvas[top_crop:bottom_crop, left_crop:right_crop] = (
+            img_cv[top_crop:bottom_crop, left_crop:right_crop]
+        )
 
-        # 将中间部分的图像复制到白色画布的相应位置
-        white_canvas[top_crop:bottom_crop, left_crop:right_crop] = image_cv[top_crop:bottom_crop, left_crop:right_crop]
+        save_dir = "./data"
+        os.makedirs(save_dir, exist_ok=True)
+        CvTool.imwrite(os.path.join(save_dir, "region_screenshot.png"), white_canvas)
 
-        # # 获取图像的宽度和高度
-        # width, height = screenshot.size
-        # # 创建一个白色背景的图像
-        # white_image = Image.new('RGB', (width, height), (255, 255, 255))
-        # # 将上半部分复制到白色背景图像上
-        # white_image.paste(screenshot.crop((width * 0.8, height * 0.4, width, height * 0.8)), (0, 0))
-        save_path = os.path.join(save_dir, "region_screenshot_0.png")
-        # white_image.save(save_path)
-        CvTool.imwrite(save_path, white_canvas)
+        cropped_pil = Image.fromarray(
+            cv2.cvtColor(white_canvas, cv2.COLOR_BGR2RGB)
+        )
 
-        # 3. 使用 读光OCR 获取详细的 OCR 数据
-        # image_to_data 返回一个字典，包含已识别的文字、位置、置信度等信息
-        # pytesseract.image_to_data(screenshot, lang=lang, output_type=Output.DICT)
-        ocr_data = do_handle_image(screenshot)
+        ocr_result = do_handle_image(cropped_pil)
+        if not ocr_result:
+            logger.info("OCR 未识别到任何文字")
+            return None
 
-        # 4. 遍历 OCR 结果，查找目标文字
-        num_boxes = len(ocr_data['level'])
-        for i in range(len(ocr_data)):
-            # 只有当 OCR 引擎对识别结果有一定置信度时才进行比较
-            if int(float(ocr_data['conf'][i])) > 60: # 置信度阈值，可以调整
-                if text_to_find in ocr_data['text'][i]:
-                    # 找到了！计算该文字的中心点坐标
-                    x = ocr_data['left'][i] + ocr_data['width'][i] // 2
-                    y = ocr_data['top'][i] + ocr_data['height'][i] // 2
-                    
-                    print(f"在窗口中找到文字 '{text_to_find}'，位置: ({x}, {y})，置信度: {ocr_data['conf'][i]}%")
-                    return (x, y)
-                    
+        one_image_result = ocr_result[0] if isinstance(ocr_result, list) and ocr_result else []
+        for item in one_image_result:
+            box, text_score = item[0], item[1]
+            text, score = text_score
+            if score < _CONFIDENCE_THRESHOLD:
+                continue
+            if text_to_find in text:
+                cx, cy = _box_center(box)
+                logger.info(
+                    "在窗口中找到文字 '%s'（命中：'%s'），位置: (%d, %d)，置信度: %.3f",
+                    text_to_find, text, cx, cy, score,
+                )
+                return (cx, cy)
+
+        logger.info("在窗口中未找到文字: '%s'", text_to_find)
+        return None
+
     except Exception as e:
-        print(f"查找文字 '{text_to_find}' 时发生错误: {e}")
-
-    # 5. 如果遍历完所有结果都找不到，则返回 None
-    print(f"在窗口中未找到文字: '{text_to_find}'")
-    return None
+        logger.exception("查找文字 '%s' 时发生错误", text_to_find)
+        return None
 
 
-def do_handle_image(image, type):
-    # 模型参数
-    rec_path = r"models\duguang-ocr-onnx-v2\base_seglink++\recognition_model_general"                     # 文字识别模型路径
-    det_path = r"models\duguang-ocr-onnx-v2\base_seglink++\detection_model_general\model_1600x1600.onnx"    # 文本检测模型文件路径
-    img_size=1600           # 文本检测模型内部预处理时使用的固定尺寸（单位：像素），与输入图片的实际尺寸无关
-    model_type = "seglink"  # 模型类型
-    cpu_thread_num=4        # onnx 运行线程数, 线程越多，识别速度越快
-    device = "cpu"          # 如果想使用gpu设置为 `device = "gpu"`，同时cpu_thread_num会失效
+def do_handle_image(image) -> list:
+    """对单张图片执行 OCR，返回 DGOCR 原始结果。
 
-    # 初始化模型
-    ocr = DGOCR(rec_path, det_path, img_size=img_size, model_type=model_type, device=device, cpu_thread_num=cpu_thread_num)
+    Args:
+        image: PIL.Image 或 np.ndarray 输入图像。
 
-    # img1 = "data/region_screenshot.png"     # 图片
-    batch_image = [image]  # 批量，输入的图片数量就是批次大小
+    Returns:
+        DGOCR.run 的原始返回值：list[list[list[box, (text, score)]]]。
+        一张图片时取 [0] 即该图所有识别结果。
+    """
+    ocr = _get_ocr()
+    batch_image = [image]
+    return ocr.run(images=batch_image, type=_MODEL_TYPE)
 
-    # 识别图片
-    ocr_result = ocr.run(images=batch_image)
 
-    # # 打印结果
-    # for i in range(len(ocr_result)):
-    #     print(f"第{i+1}张图片结果")
-    #     print(f"{ocr_result[i]}")
-
-    # 可视化
-    for i in range(len(ocr_result)):
-        org_path = f"data/region_screenshot.png"
-        save_path = f"data/region_screenshot-{i}.png"
-        ocr.draw(org_path, ocr_result[i], save_path)
-        print(f"已经将可视化结果保存至：{save_path}")
-
-    return ocr_result
+def _box_center(box) -> tuple[int, int]:
+    """根据 4 个点计算中心坐标。box 形如 [[x1,y1], [x2,y2], [x3,y3], [x4,y4]]。"""
+    xs = [p[0] for p in box]
+    ys = [p[1] for p in box]
+    return int(sum(xs) / len(xs)), int(sum(ys) / len(ys))

@@ -3,6 +3,7 @@
 启动新设计的左侧菜单栏界面
 """
 import ctypes
+import logging
 import sys
 
 # PyQt6 在 Windows 上默认会调用 SetProcessDpiAwarenessContext(PER_MONITOR_AWARE_V2)。
@@ -19,18 +20,35 @@ if sys.platform == "win32":
 from PyQt6.QtWidgets import QApplication
 
 from autogame_xcx.ui.main_window import MainGUI
+from autogame_xcx.ui.theme import apply_theme
+
+
+def _shutdown_mcp_server(window: MainGUI) -> None:
+    """退出前优雅停止 MCP server（如果用户启动过）。
+
+    幂等：未启动时 request_stop 直接返回。最多等 3s 让 uvicorn 完成 shutdown。
+    """
+    server = window.mcp_server
+    if server.isRunning():
+        server.request_stop()
+        server.wait(3000)
 
 
 def main():
     """启动主界面"""
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+        datefmt="%H:%M:%S",
+    )
     print("正在启动游戏自动化系统主界面...")
     app = QApplication(sys.argv)
+    apply_theme(app)
     window = MainGUI()
     window.show()
 
-    # 阶段 2.6：app 退出前优雅清理远程驱动（client.stop + scheduler.stop + JVM shutdown）
-    # 幂等；未启动远程驱动时也安全调用
-    app.aboutToQuit.connect(window.remote_driver.shutdown)
+    # app 退出前优雅停止 MCP server thread（用户可能未启动，幂等）
+    app.aboutToQuit.connect(lambda: _shutdown_mcp_server(window))
 
     print("🎉 主界面启动成功！")
     sys.exit(app.exec())

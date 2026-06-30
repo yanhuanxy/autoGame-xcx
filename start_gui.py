@@ -1,22 +1,11 @@
+"""GUI 快速启动器（向后兼容入口）。
+
+历史：早期版本的 GUI 入口，现已被 `start_main_gui.py`（集成远程驱动 + DPI 处理）
+取代。本文件保留为 thin wrapper，避免外部文档/脚本失效。
+
+推荐使用：`python start_main_gui.py`
 """
-游戏自动化系统GUI启动器
-快速启动PyQt6图形界面模板创建工具
-"""
-import sys
-
-from PyQt6.QtWidgets import QApplication
-
-from autogame_xcx.ui.template_creator import TemplateCreatorGUI
-
-
-def main():
-    """启动GUI工具"""
-    print("正在启动游戏自动化模板创建工具...")
-    app = QApplication(sys.argv)
-    window = TemplateCreatorGUI()
-    window.show()
-    print("✓ 启动GUI界面...")
-    sys.exit(app.exec())
+from start_main_gui import main
 
 
 if __name__ == "__main__":

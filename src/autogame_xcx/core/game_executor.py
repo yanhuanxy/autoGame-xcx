@@ -2,22 +2,26 @@
 游戏执行引擎
 核心执行模块，基于图像比对执行游戏自动化任务
 """
-import cv2
-import pyautogui
-import time
 import json
-import numpy as np
-from PIL import ImageGrab
+import logging
 import os
+import time
 from datetime import datetime
 
-from autogame_xcx.platform.window_controller import GameWindowController
-from autogame_xcx.core.image_matcher import ImageMatcher
+import cv2
+import numpy as np
+import pyautogui
+from PIL import ImageGrab
+
 from autogame_xcx.core.coordinate_converter import CoordinateConverter
-from autogame_xcx.core.template_manager import TemplateManager
+from autogame_xcx.core.image_matcher import ImageMatcher
 from autogame_xcx.core.report_generator import ReportGenerator
+from autogame_xcx.core.template_manager import TemplateManager
+from autogame_xcx.platform.window_controller import GameWindowController
 from autogame_xcx.utils.constants import REPORTS_PATH
-from autogame_xcx.utils.opencv import CvTool
+
+logger = logging.getLogger(__name__)
+
 
 class GameExecutor:
     def __init__(self):
@@ -41,63 +45,63 @@ class GameExecutor:
     
     def load_template(self, template_path):
         """加载模板文件"""
-        print(f"加载模板: {template_path}")
+        logger.info(f"加载模板: {template_path}")
         
         self.current_template = self.template_manager.load_template(template_path)
         if not self.current_template:
-            print("模板加载失败")
+            logger.warning("模板加载失败")
             return False
         
-        print(f"模板加载成功: {self.current_template['template_info']['name']}")
+        logger.info(f"模板加载成功: {self.current_template['template_info']['name']}")
         return True
     
     def initialize_execution(self):
         """初始化执行环境"""
-        print("初始化执行环境...")
+        logger.info("初始化执行环境...")
         
         # 1. 查找微信窗口
         wechat_window = self.window_controller.find_wechat_window()
         if not wechat_window:
-            print("未找到微信窗口")
+            logger.warning("未找到微信窗口")
             return False
         
-        print(f"找到微信窗口: {wechat_window['title']}")
+        logger.info(f"找到微信窗口: {wechat_window['title']}")
         
         # 2. 激活窗口
         if not self.window_controller.activate_window():
-            print("无法激活微信窗口")
+            logger.warning("无法激活微信窗口")
             return False
         
         # 3. 获取当前分辨率
         current_resolution = self.window_controller.get_current_resolution()
         if not current_resolution:
-            print("无法获取当前分辨率")
+            logger.warning("无法获取当前分辨率")
             return False
         
         template_resolution = self.current_template['template_info']['template_resolution']
         
-        print(f"模板分辨率: {template_resolution['width']}x{template_resolution['height']}")
-        print(f"当前分辨率: {current_resolution['width']}x{current_resolution['height']}")
+        logger.info(f"模板分辨率: {template_resolution['width']}x{template_resolution['height']}")
+        logger.info(f"当前分辨率: {current_resolution['width']}x{current_resolution['height']}")
         
         # 4. 初始化坐标转换器
         self.coordinate_converter = CoordinateConverter(template_resolution, current_resolution)
         
         # 5. 检查是否需要调整窗口大小
         if not self.coordinate_converter.is_resolution_match():
-            print("分辨率不匹配，尝试调整窗口大小...")
+            logger.info("分辨率不匹配，尝试调整窗口大小...")
             if self.window_controller.resize_window(template_resolution):
-                print("窗口大小调整成功")
+                logger.info("窗口大小调整成功")
                 # 重新获取分辨率
                 current_resolution = self.window_controller.get_current_resolution()
                 self.coordinate_converter = CoordinateConverter(template_resolution, current_resolution)
             else:
-                print("窗口大小调整失败，将使用坐标转换")
+                logger.warning("窗口大小调整失败，将使用坐标转换")
         
         return True
 
     def initialize_execution_for_test(self, template_data):
         """为测试初始化执行环境"""
-        print("初始化测试执行环境...")
+        logger.info("初始化测试执行环境...")
 
         # 设置当前模板
         self.current_template = template_data
@@ -105,26 +109,26 @@ class GameExecutor:
         # 1. 查找微信窗口
         wechat_window = self.window_controller.find_wechat_window()
         if not wechat_window:
-            print("未找到微信窗口")
+            logger.warning("未找到微信窗口")
             return False
 
-        print(f"找到微信窗口: {wechat_window['title']}")
+        logger.info(f"找到微信窗口: {wechat_window['title']}")
 
         # 2. 激活窗口
         if not self.window_controller.activate_window():
-            print("无法激活微信窗口")
+            logger.warning("无法激活微信窗口")
             return False
 
         # 3. 获取当前分辨率
         current_resolution = self.window_controller.get_current_resolution()
         if not current_resolution:
-            print("无法获取当前分辨率")
+            logger.warning("无法获取当前分辨率")
             return False
 
         template_resolution = template_data['template_info']['template_resolution']
 
-        print(f"模板分辨率: {template_resolution['width']}x{template_resolution['height']}")
-        print(f"当前分辨率: {current_resolution['width']}x{current_resolution['height']}")
+        logger.info(f"模板分辨率: {template_resolution['width']}x{template_resolution['height']}")
+        logger.info(f"当前分辨率: {current_resolution['width']}x{current_resolution['height']}")
 
         # 4. 初始化坐标转换器
         self.coordinate_converter = CoordinateConverter(template_resolution, current_resolution)
@@ -133,7 +137,7 @@ class GameExecutor:
 
     def execute_template(self, template_path):
         """执行模板"""
-        print(f"\n开始执行模板: {template_path}")
+        logger.info(f"\n开始执行模板: {template_path}")
         
         # 初始化执行报告
         self.execution_report = {
@@ -160,10 +164,10 @@ class GameExecutor:
         
         for task in tasks:
             if not task.get('enabled', True):
-                print(f"跳过已禁用的任务: {task['task_name']}")
+                logger.info(f"跳过已禁用的任务: {task['task_name']}")
                 continue
             
-            print(f"\n执行任务: {task['task_name']}")
+            logger.info(f"\n执行任务: {task['task_name']}")
             
             task_result = self.execute_task(task)
             self.execution_report['tasks'].append(task_result)
@@ -206,7 +210,7 @@ class GameExecutor:
         
         for retry in range(max_retry + 1):
             if retry > 0:
-                print(f"  重试第 {retry} 次...")
+                logger.info(f"  重试第 {retry} 次...")
                 task_result['retry_count'] = retry
                 time.sleep(2)  # 重试前等待
             
@@ -229,10 +233,10 @@ class GameExecutor:
             
             if success:
                 task_result['status'] = 'completed'
-                print(f"  任务完成: {task['task_name']}")
+                logger.info(f"  任务完成: {task['task_name']}")
                 break
             else:
-                print(f"  任务失败: {task['task_name']} - {task_result['error_message']}")
+                logger.warning(f"  任务失败: {task['task_name']} - {task_result['error_message']}")
         
         return task_result
     
@@ -247,7 +251,7 @@ class GameExecutor:
         }
         
         try:
-            print(f"    执行步骤: {step['step_id']}")
+            logger.debug(f"    执行步骤: {step['step_id']}")
             
             # 1. 转换用户标记区域坐标
             marked_area = step['user_marked_area']
@@ -277,8 +281,6 @@ class GameExecutor:
             )
             
             reference_image = self.image_matcher.load_reference_image(reference_image_path)
-            CvTool.imwrite('./data/test.png', reference_image)
-            CvTool.imwrite('./data/test1.png', current_image_cv)
             # 6. 进行图像比对
             match_threshold = step.get('match_threshold', 0.85)
             is_match, similarity = self.image_matcher.match_images(
@@ -290,7 +292,7 @@ class GameExecutor:
             
             step_result['similarity_score'] = similarity
             
-            print(f"      图像匹配: {is_match}, 相似度: {similarity:.3f}")
+            logger.debug(f"      图像匹配: {is_match}, 相似度: {similarity:.3f}")
             
             if is_match:
                 # 7. 执行对应操作
@@ -307,12 +309,12 @@ class GameExecutor:
                     # 执行点击（如果不是模拟运行模式）
                     if not self.dry_run_mode:
                         pyautogui.click(abs_click_x, abs_click_y)
-                        print(f"      点击位置: ({abs_click_x}, {abs_click_y})")
+                        logger.debug(f"      点击位置: ({abs_click_x}, {abs_click_y})")
                     else:
-                        print(f"      [模拟] 点击位置: ({abs_click_x}, {abs_click_y})")
+                        logger.debug(f"      [模拟] 点击位置: ({abs_click_x}, {abs_click_y})")
                     
                 elif step['action_type'] == 'image_verify_only':
-                    print(f"      验证成功")
+                    logger.debug("      验证成功")
                 
                 step_result['success'] = True
             else:
@@ -320,7 +322,7 @@ class GameExecutor:
         
         except Exception as e:
             step_result['error_message'] = f"步骤执行异常: {str(e)}"
-            print(f"      步骤执行异常: {e}")
+            logger.exception(f"      步骤执行异常: {e}")
         
         return step_result
     
@@ -338,10 +340,10 @@ class GameExecutor:
             with open(report_path, 'w', encoding='utf-8') as f:
                 json.dump(self.execution_report, f, ensure_ascii=False, indent=2)
             
-            print(f"\n执行报告已保存: {report_path}")
+            logger.info(f"\n执行报告已保存: {report_path}")
             
         except Exception as e:
-            print(f"保存执行报告时出错: {e}")
+            logger.exception(f"保存执行报告时出错: {e}")
 
     def generate_enhanced_reports(self):
         """生成增强的执行报告"""
@@ -362,25 +364,25 @@ class GameExecutor:
             )
 
             if html_path:
-                print(f"HTML报告已生成: {html_path}")
+                logger.info(f"HTML报告已生成: {html_path}")
             if json_path:
-                print(f"JSON报告已生成: {json_path}")
+                logger.info(f"JSON报告已生成: {json_path}")
 
         except Exception as e:
-            print(f"生成增强报告时出错: {e}")
+            logger.exception(f"生成增强报告时出错: {e}")
 
     def print_execution_summary(self):
         """打印执行摘要"""
-        print(f"\n{'='*50}")
-        print(f"执行摘要")
-        print(f"{'='*50}")
-        print(f"开始时间: {self.execution_report['start_time']}")
-        print(f"结束时间: {self.execution_report['end_time']}")
-        print(f"总任务数: {self.execution_report['summary']['total_tasks']}")
-        print(f"完成任务: {self.execution_report['summary']['completed']}")
-        print(f"失败任务: {self.execution_report['summary']['failed']}")
-        print(f"成功率: {self.execution_report['summary']['success_rate']}")
-        print(f"{'='*50}")
+        logger.info(f"\n{'='*50}")
+        logger.info("执行摘要")
+        logger.info(f"{'='*50}")
+        logger.info(f"开始时间: {self.execution_report['start_time']}")
+        logger.info(f"结束时间: {self.execution_report['end_time']}")
+        logger.info(f"总任务数: {self.execution_report['summary']['total_tasks']}")
+        logger.info(f"完成任务: {self.execution_report['summary']['completed']}")
+        logger.warning(f"失败任务: {self.execution_report['summary']['failed']}")
+        logger.info(f"成功率: {self.execution_report['summary']['success_rate']}")
+        logger.info(f"{'='*50}")
 
 # 测试函数
 def test_game_executor():
@@ -390,7 +392,7 @@ def test_game_executor():
     # 这里需要一个实际的模板文件进行测试
     # executor.execute_template("templates/test_template.json")
     
-    print("游戏执行引擎测试完成")
+    logger.info("游戏执行引擎测试完成")
 
 if __name__ == "__main__":
     import sys

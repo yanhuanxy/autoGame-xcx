@@ -16,16 +16,29 @@ import time
 from autogame_xcx.utils.opencv import CvTool
 
 class GameWindowController:
+    # 默认窗口标题关键字；调用方可通过 find_wechat_window(keyword=...) 覆盖
+    DEFAULT_WINDOW_KEYWORD = "聊斋搜神记"
+
     def __init__(self):
         self.target_window = None
         self.game_area = None
         self.window_info = {}
-    
-    def find_wechat_window(self):
-        """查找微信窗口"""
+
+    def find_wechat_window(self, keyword: str | None = None):
+        """查找目标窗口（按标题或进程名模糊匹配）。
+
+        Args:
+            keyword: 匹配关键字；None 时使用 DEFAULT_WINDOW_KEYWORD。
+                     传 "微信" 可匹配微信主窗口；传游戏名可匹配具体游戏。
+
+        Returns:
+            匹配的窗口 dict；未找到返回 None。
+        """
+        if keyword is None:
+            keyword = self.DEFAULT_WINDOW_KEYWORD
         all_windows = self._get_running_windows()
         for hwnd, title, process_name in all_windows:
-            if "聊斋搜神记" in title or "聊斋搜神记" in process_name.lower():
+            if keyword in title or keyword in process_name.lower():
                 self.target_window = {
                     'hwnd': hwnd,
                     'title': title,

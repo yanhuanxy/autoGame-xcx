@@ -1,66 +1,140 @@
-# autoGame-LZ
+# wechat-link-autogame-xcx
 
-一个用于自动化操作桌面应用程序的 Python 项目。
+> 微信小程序游戏自动化系统：本地图像识别执行引擎 + MCP 服务端
 
-## 功能
+[![Python](https://img.shields.io/badge/python-3.13-blue.svg)](https://www.python.org/)
+[![Platform](https://img.shields.io/badge/platform-Windows-blue.svg)](https://learn.microsoft.com/windows/)
+[![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-*   检测并列出当前系统中正在运行的窗口。
-*   允许用户选择要进行自动化操作的目标应用程序窗口。
-*   在指定的窗口内进行图像识别和文字识别。
-*   根据识别结果，模拟鼠标点击操作。
+## 能力概览
 
-## 安装与使用
+本项目是 [wechat-ilink-bot](../wechat-ilink-bot) 体系中的**本地执行 + MCP 服务端**：
 
-1.  **创建并激活虚拟环境**
+| 层 | 目录 | 职责 |
+|---|---|---|
+| **本地执行层** | `src/autogame_xcx/core/` + `platform/` + `ocr/` | 图像匹配（多种算法）、DPI 三态自适应坐标转换、DGOCR 文字识别、模板执行引擎、HTML/JSON 报告 |
+| **MCP 服务层** | `src/autogame_xcx/mcp/` | 暴露 MCP 工具（执行/列出模板、查报告等），供 wechat-ilink-bot 通过 JSON-RPC over HTTP+SSE 远程调用 |
 
-    本项目推荐在独立的 Python 虚拟环境中运行，以避免依赖冲突。
+> 远程驱动（ilink）与 LLM 自然语言编排已迁移到 [wechat-ilink-bot](../wechat-ilink-bot)，本项目不再包含该层。
 
-    ```powershell
-    # 进入项目目录
-    cd autoGame-LZ
+## 安装
 
-    # 创建虚拟环境 (如果 venv 文件夹不存在)
-    python -m venv venv
+### 前置要求
 
-    # 激活虚拟环境 (在 Windows PowerShell 中)
-    .\venv\Scripts\Activate.ps1
-    ```
-    *如果激活失败，提示"因为在此系统上禁止运行脚本"，请先在 PowerShell 中运行以下命令，然后再重新激活：*
-    `Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope Process`
+- Windows 10 / 11
+- Python 3.13+
+- [uv](https://docs.astral.sh/uv/)（推荐）或 pip
+- 微信 PC 客户端（自动化目标窗口）
 
-    *激活成功后，你会在命令行提示符前看到 `(venv)` 字样。*
+### 步骤
 
-2.  **安装依赖**
+```powershell
+# 1. 克隆项目
+git clone <repo-url>
+cd wechat-link-autogame-xcx
 
-    在**已激活**的虚拟环境中，运行以下命令安装项目所需的库：
+# 2. 使用 uv 同步依赖
+uv sync
+```
 
-    ```bash
-    pip install -r requirements.txt
-    ```
-    > 需要校验本地环境是否支持GPU推理 否则使用 CPU
+### DGOCR 模型下载
 
-3.  **安装 [duguang-ocr-onnx-v2](models/duguang-ocr-onnx-v2)**
+本项目使用 `duguang-ocr-onnx-v2` 进行文字识别，下载下列成对模型到 `models/duguang-ocr-onnx-v2/`：
 
-    本项目使用 `duguang-ocr-onnx-v2` 模型进行文字识别，它依赖于 duguang 的 duguang-ocr-onnx-v2 模型。请根据你的操作系统下载并安装它。
+| 模型 | 模型大小 | modelscope 下载 | 个人评价 |
+|---|---|---|---|
+| base_seglink++ | 73.2MB+78MB | [v2 地址](https://modelscope.cn/models/mscoder/duguang-ocr-onnx-v2) | 9 分 |
+| large | 73.2MB+46.4MB | [v2 地址](https://modelscope.cn/models/mscoder/duguang-ocr-onnx-v2) | 8 分 |
+| small | 7.4MB+5.2MB | [v2 地址](https://modelscope.cn/models/mscoder/duguang-ocr-onnx-v2) | 5 分 |
 
-    需要下载下面表格中一对文字识别(`rec`)和检测(`det`)模型。
-    
-    | 模型           | 模型大小      | 模型原始仓库                                                 | 百度网盘下载                                                 | modelscope下载（高速）                                       | 个人评价 |
-    | -------------- | ------------- | ------------------------------------------------------------ | ------------------------------------------------------------ | ------------------------------------------------------------ | -------- |
-    | base_seglink++ | 73.2MB+78MB   | rec[地址](https://modelscope.cn/models/iic/cv_convnextTiny_ocr-recognition-general_damo/summary)，det [地址](https://modelscope.cn/models/iic/cv_resnet18_ocr-detection-line-level_damo/summary) | [地址](https://pan.baidu.com/s/1Vch_5kcL_FqQet5G9pfEJQ?pwd=tjp9) | [v2地址](https://modelscope.cn/models/mscoder/duguang-ocr-onnx-v2) | 9分      |
-    | large          | 73.2MB+46.4MB | rec[地址](https://modelscope.cn/models/iic/cv_convnextTiny_ocr-recognition-general_damo/summary)，det [地址](https://www.modelscope.cn/models/iic/cv_resnet18_ocr-detection-db-line-level_damo/summary) | [地址](https://pan.baidu.com/s/1Vch_5kcL_FqQet5G9pfEJQ?pwd=tjp9) | [v2地址](https://modelscope.cn/models/mscoder/duguang-ocr-onnx-v2) | 8分      |
-    | small          | 7.4MB+5.2MB   | rec[地址](https://modelscope.cn/models/iic/cv_LightweightEdge_ocr-recognitoin-general_damo/summary)，det [地址](https://www.modelscope.cn/models/iic/cv_proxylessnas_ocr-detection-db-line-level_damo/summary) | [地址](https://pan.baidu.com/s/1Vch_5kcL_FqQet5G9pfEJQ?pwd=tjp9) | [v2地址](https://modelscope.cn/models/mscoder/duguang-ocr-onnx-v2) | 5分      |
-    
-    >  不同的rec和det可以自由组合使用
-4.  **运行项目**
+> rec 和 det 可以自由组合使用。
 
-    确保你**处于已激活的虚拟环境**中，然后运行主程序：
+## 快速开始
 
-    ```bash
-    python process_main.py
-    ```
+### GUI 模式（推荐）
 
-## 注意事项
+```powershell
+python start_main_gui.py
+```
 
-*   请将需要识别的图片素材放置在 `images` 文件夹下（如果需要）。
-*   在首次运行时，可能需要根据 duguang-ocr-onnx-v2 模型 的实际路径修改 `main.py` 文件中的配置。 
+提供可视化模板编辑、匹配测试、执行监控、MCP 服务控制。
+
+### CLI 模式
+
+```powershell
+# 自检（窗口/图像/坐标/模板四项）
+python -m autogame_xcx.core.process_main --test all
+
+# 列出已有模板
+python -m autogame_xcx.core.process_main --list-templates
+
+# 执行指定模板
+python -m autogame_xcx.core.process_main --execute <template_name>
+```
+
+## 配置
+
+### 窗口关键字
+
+默认匹配 `"聊斋搜神记"`，其他游戏调用 `find_wechat_window(keyword=...)` 传入关键字，或修改 `GameWindowController.DEFAULT_WINDOW_KEYWORD` 类常量。
+
+### MCP 服务
+
+GUI 内「MCP 服务」页可启动/停止内嵌 MCP server（默认端口 `8765`）。客户端（wechat-ilink-bot）侧的接入配置见 [wechat-ilink-bot/docs/design/mcp-autogame.md](../wechat-ilink-bot/docs/design/mcp-autogame.md)。
+
+## 项目结构
+
+```
+wechat-link-autogame-xcx/
+├── src/autogame_xcx/
+│   ├── core/                # 本地执行层
+│   │   ├── image_matcher.py         # 多种图像匹配算法
+│   │   ├── coordinate_converter.py  # DPI 三态坐标转换
+│   │   ├── game_executor.py         # 模板执行引擎
+│   │   ├── template_manager.py      # 模板增删改查
+│   │   ├── process_main.py          # CLI 入口
+│   │   └── report_generator.py      # HTML/JSON/Text 报告
+│   ├── platform/            # 窗口控制 + DPI（Windows API 隔离）
+│   ├── ocr/                 # DGOCR 集成
+│   │   ├── engine.py
+│   │   └── dgocr/           # 自研 ONNX OCR（det+rec+seglink）
+│   ├── mcp/                 # MCP 服务层（供 wechat-ilink-bot 调用）
+│   │   ├── server.py                # MCP server
+│   │   ├── tools.py                 # MCP 工具定义
+│   │   └── executor_bridge.py       # MCP ↔ GameExecutor 桥接
+│   ├── ui/                  # PyQt6 GUI（Phase E 薄壳化已完成）
+│   │   ├── main_window.py           # MainGUI 薄壳（外壳 + 5 页路由）
+│   │   ├── pages/                   # 导航页 intro / management / creator / guide
+│   │   ├── widgets/                 # 可复用控件
+│   │   ├── controllers/             # UI ↔ core 中介
+│   │   ├── theme.py / icons.py      # 主题与图标
+│   │   ├── template_creator.py      # TemplateCreatorGUI（历史债，仅 CLI --gui 用）
+│   │   └── dialogs/                 # 各类对话框 / 功能页
+│   └── utils/              # 通用工具（OpenCV、legacy device/window、常量）
+├── data/                    # 模板 / 配置 / 参考图 / 报告
+├── doc/                     # 设计文档 + 历史计划
+│   ├── architecture/                # overview / boundaries（架构详解）
+│   ├── plans/                       # PLAN_01..03 演进规划
+│   └── archive/                     # 历史文档（Phase 1/2、verification_report，已过时仅追溯）
+├── tests/unit/              # 单元测试
+├── start_main_gui.py        # GUI 入口
+└── pyproject.toml
+```
+
+## 文档导航
+
+- [AGENTS.md](AGENTS.md) — 项目契约真相源（分层 / 依赖 / 已知债 / 约定）
+- [doc/architecture/](doc/architecture/) — 架构详解（overview / boundaries）
+- [doc/plans/](doc/plans/) — PLAN_01..03 后续架构演进规划
+- [doc/archive/](doc/archive/) — 历史文档（Phase 1/2、verification_report，已过时仅作追溯）
+
+## 测试
+
+```powershell
+# 全量单测
+uv run pytest tests/unit -v
+```
+
+## License
+
+MIT

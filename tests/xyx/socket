@@ -1,0 +1,76 @@
+curl 'wss://gate-xs3wx.szfangzhouhd.com/ws/?host=10.2.1.15&port=10102' \
+  -H 'Upgrade: websocket' \
+  -H 'Origin: https://cdn-xs3wx.szfangzhouhd.com' \
+  -H 'Cache-Control: no-cache' \
+  -H 'Accept-Language: zh-CN,zh;q=0.9' \
+  -H 'Pragma: no-cache' \
+  -H 'Connection: Upgrade' \
+  -H 'Sec-WebSocket-Key: rGHEwsyaV61etkKV3miNwQ==' \
+  -H 'User-Agent: Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Mobile Safari/537.36' \
+  -H 'Sec-WebSocket-Version: 13' \
+  -H 'Sec-WebSocket-Extensions: permessage-deflate; client_max_window_bits'
+
+
+
+
+curl 'wss://chat-xs3wx.szfangzhouhd.com/?key=98044f4ca47e66241b164dd4f7084e2c' \
+  -H 'Upgrade: websocket' \
+  -H 'Origin: https://cdn-xs3wx.szfangzhouhd.com' \
+  -H 'Cache-Control: no-cache' \
+  -H 'Accept-Language: zh-CN,zh;q=0.9' \
+  -H 'Pragma: no-cache' \
+  -H 'Connection: Upgrade' \
+  -H 'Sec-WebSocket-Key: 7h1APC7N5zscyrgO2AOK5g==' \
+  -H 'User-Agent: Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Mobile Safari/537.36' \
+  -H 'Sec-WebSocket-Version: 13' \
+  -H 'Sec-WebSocket-Extensions: permessage-deflate; client_max_window_bits'
+
+
+ (function() {
+      const logs = [];
+      window._wsLogs = logs;
+
+      const OrigWS = window.WebSocket;
+      function toHex(buf) {
+          return Array.from(new Uint8Array(buf))
+              .map(b => b.toString(16).padStart(2, '0')).join(' ');
+      }
+
+      window.WebSocket = function(url, protocols) {
+          console.log('[WS] connect:', url);
+          const ws = protocols ? new OrigWS(url, protocols) : new OrigWS(url);
+
+          const origSend = ws.send.bind(ws);
+          ws.send = function(data) {
+              const e = { dir: 'OUT', ts: Date.now() };
+              if (typeof data === 'string') { e.type = 'text'; e.text = data; }
+              else if (data instanceof ArrayBuffer) { e.type = 'bin'; e.hex = toHex(data); }
+              else if (data instanceof Blob) { e.type = 'blob'; data.arrayBuffer().then(ab => e.hex = toHex(ab)); }
+              logs.push(e);
+              return origSend(data);
+          };
+
+          ws.addEventListener('message', function(ev) {
+              const e = { dir: 'IN', ts: Date.now() };
+              if (typeof ev.data === 'string') { e.type = 'text'; e.text = ev.data; }
+              else if (ev.data instanceof ArrayBuffer) { e.type = 'bin'; e.hex = toHex(ev.data); }
+              else if (ev.data instanceof Blob) { e.type = 'blob'; ev.data.arrayBuffer().then(ab => e.hex = toHex(ab)); }
+              logs.push(e);
+          });
+
+          return ws;
+      };
+      window.WebSocket.prototype = OrigWS.prototype;
+      window.WebSocket.CONNECTING = OrigWS.CONNECTING;
+      window.WebSocket.OPEN = OrigWS.OPEN;
+      window.WebSocket.CLOSING = OrigWS.CLOSING;
+      window.WebSocket.CLOSED = OrigWS.CLOSED;
+
+      // 一键导出
+      window.dumpWs = () => JSON.stringify(logs, null, 2);
+      window.clearWs = () => { logs.length = 0; console.log('[WS] cleared'); };
+      console.log('[WS] hook installed. dumpWs() to export, clearWs() to clear');
+  })();
+
+clearWs()
+dumpWs()

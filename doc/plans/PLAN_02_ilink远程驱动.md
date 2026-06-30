@@ -1,10 +1,12 @@
 # PLAN_02：ilink SDK 远程驱动
 
+> 状态：⬛ 代码已迁出 —— 本规划设计的 `remote/` 层（ilink + 指令系统 + LLM 编排）已整体迁移到 [wechat-ilink-bot](../../../wechat-ilink-bot)，本项目不再包含；保留本文件作历史追溯。
 > 项目：`wechat-link-autogame-xcx`
 > 方向：通过 JPype1 集成 `wechat-ilink-sdk-java`，建立"远程用户微信 ↔ Python 自动化"双向通道
 > 预计周期：6 阶段 = 约 2 周（核心链路） + 后续 LLM 编排迭代
 > 前置依赖：方向 1 完成（包结构稳定）
 
+> ⚠️ 以下"进度状态 ✅"为**历史完成记录**；该层代码已于后续整体迁出至 wechat-ilink-bot，本项目不再包含 `remote/`。
 > **进度状态**：
 > - ✅ 阶段 2.1 JPype Spike（2026-06-15 完成，17/17 检查通过）
 > - ✅ 阶段 2.2 消息接收通道（完成）

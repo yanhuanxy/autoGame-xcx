@@ -3,13 +3,17 @@
 提供命令行界面进行系统测试和基本操作
 """
 import argparse
+import logging
+import os
 from datetime import datetime
 
-from autogame_xcx.platform.window_controller import GameWindowController
-from autogame_xcx.core.image_matcher import ImageMatcher
 from autogame_xcx.core.coordinate_converter import CoordinateConverter
-from autogame_xcx.core.template_manager import TemplateManager
 from autogame_xcx.core.game_executor import GameExecutor
+from autogame_xcx.core.image_matcher import ImageMatcher
+from autogame_xcx.core.template_manager import TemplateManager
+from autogame_xcx.platform.window_controller import GameWindowController
+from autogame_xcx.utils.opencv import CvTool
+
 
 def test_window_detection():
     """测试窗口检测功能"""
@@ -55,7 +59,6 @@ def test_window_detection():
         
         # 保存截图
         screenshot_path = f"test_screenshot_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
-        import cv2
         CvTool.imwrite(screenshot_path, screenshot)
         print(f"✓ 截图已保存: {screenshot_path}")
     else:
@@ -273,6 +276,11 @@ def execute_template(template_path):
 
 def main():
     """主函数"""
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+        datefmt="%H:%M:%S",
+    )
     parser = argparse.ArgumentParser(description='游戏自动化系统 - Phase 2 完善版本')
     parser.add_argument('--test', choices=['window', 'image', 'coordinate', 'template', 'all'],
                        help='运行指定测试')
@@ -307,19 +315,24 @@ def main():
             print("未找到任何模板")
     elif args.gui:
         try:
-            from template_creator_gui import main as gui_main
-            gui_main()
+            from PyQt6.QtWidgets import QApplication
+
+            from autogame_xcx.ui.template_creator import TemplateCreatorGUI
+            app = QApplication(["autogame_xcx"])
+            window = TemplateCreatorGUI()
+            window.show()
+            app.exec()
         except ImportError as e:
             print(f"启动GUI失败，请确保已安装PyQt6: {e}")
         except Exception as e:
             print(f"GUI启动异常: {e}")
     elif args.report:
         try:
-            from report_generator import ReportGenerator
+            from autogame_xcx.core.report_generator import ReportGenerator
             generator = ReportGenerator()
 
             # 加载执行数据
-            with open(args.report, 'r', encoding='utf-8') as f:
+            with open(args.report, encoding='utf-8') as f:
                 import json
                 data = json.load(f)
 

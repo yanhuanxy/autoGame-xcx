@@ -1,5 +1,6 @@
 # PLAN_01：代码结构规范化
 
+> 状态：✅ 已落地（src layout + 分层包 core/platform/ocr/ui/mcp/utils + uv/ruff/mypy/pytest 工具链，是当前架构基础）
 > 项目：`wechat-link-autogame-xcx`（微信小程序游戏自动化）
 > 方向：引入 src layout + 分层包 + 现代工具链，解决现有工程债
 > 预计周期：5 阶段 × 2~3 天 = 约 2 周

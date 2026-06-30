@@ -1,6 +1,11 @@
 """
 存储项目所需的静态数据
 """
+from pathlib import Path
+
+# 项目根目录（src/autogame_xcx/utils/constants.py → 上溯 4 层）
+# utils/ → autogame_xcx/ → src/ → 项目根
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
 ele_coords = {
     "group_info": {
@@ -49,12 +54,12 @@ ele_coords = {
     }
 }
 # 区域截图
-REFERENCE_IMAGES_PATH = 'data/reference_images'
+REFERENCE_IMAGES_PATH = str(PROJECT_ROOT / "data" / "reference_images")
 # debug
-DEBUG_IMAGES_PATH = "data/debug_images"
-TEST_IMAGES_PATH = "data/test_images"
-DEMO_IMAGES_PATH = "data/demo_images"
+DEBUG_IMAGES_PATH = str(PROJECT_ROOT / "data" / "debug_images")
+TEST_IMAGES_PATH = str(PROJECT_ROOT / "data" / "test_images")
+DEMO_IMAGES_PATH = str(PROJECT_ROOT / "data" / "demo_images")
 # 报告文件
-REPORTS_PATH = 'data/reports'
+REPORTS_PATH = str(PROJECT_ROOT / "data" / "reports")
 # 模板
-TEMPLATES_PATH = 'data/templates'
+TEMPLATES_PATH = str(PROJECT_ROOT / "data" / "templates")

@@ -1,65 +1,24 @@
-# CLAUDE.md
+# CLAUDE.md — wechat-link-autogame-xcx
 
-Behavioral guidelines to reduce common LLM coding mistakes. Merge with project-specific instructions as needed.
+> 本项目契约的**唯一真相源是 [AGENTS.md](AGENTS.md)**；下方 `@AGENTS.md` 已将其全量导入。
+> 本文件只承载 Claude Code 专属补充（skills / subagents / hooks）。修改契约请改 AGENTS.md，不要在此另起副本。
 
-**Tradeoff:** These guidelines bias toward caution over speed. For trivial tasks, use judgment.
+@AGENTS.md
 
-## 1. Think Before Coding
+## Claude Code 专属
 
-**Don't assume. Don't hide confusion. Surface tradeoffs.**
+### Skills（按需调用）
 
-Before implementing:
-- State your assumptions explicitly. If uncertain, ask.
-- If multiple interpretations exist, present them - don't pick silently.
-- If a simpler approach exists, say so. Push back when warranted.
-- If something is unclear, stop. Name what's confusing. Ask.
+- `add-template-page` —— 按现有约定脚手架新增一个主导航页（侧栏导航 + content_stack + 控制器 + 契约测试，保持索引顺序）。
+- `run-gui` —— 启动 GUI 并对 5 个导航页逐一截图到 `data/debug/`，用于对照设计稿、排查渲染、验证 UI 改动（无显示器走 offscreen）。
 
-## 2. Simplicity First
+### Subagents（隔离只读，返回结论 + `file:line`）
 
-**Minimum code that solves the problem. Nothing speculative.**
+- `explore` —— 定位代码 / 追踪调用链 / 核实依赖方向；回答"X 在哪 / 谁调用 Y / 是否违反依赖方向"。
+- `ui-reviewer` —— 审查 `ui/` 改动是否符合设计稿（方案 A 深色控制台）与 UI 约定，出分级问题清单。每次改 `ui/` 后调用。
 
-- No features beyond what was asked.
-- No abstractions for single-use code.
-- No "flexibility" or "configurability" that wasn't requested.
-- No error handling for impossible scenarios.
-- If you write 200 lines and it could be 50, rewrite it.
+### Hooks
 
-Ask yourself: "Would a senior engineer say this is overcomplicated?" If yes, simplify.
+- `PostToolUse(Edit|Write|MultiEdit)` → `.claude/hooks/format_on_edit.py`：编辑后自动 ruff 格式化（配置见 `.claude/settings.json`）。
 
-## 3. Surgical Changes
-
-**Touch only what you must. Clean up only your own mess.**
-
-When editing existing code:
-- Don't "improve" adjacent code, comments, or formatting.
-- Don't refactor things that aren't broken.
-- Match existing style, even if you'd do it differently.
-- If you notice unrelated dead code, mention it - don't delete it.
-
-When your changes create orphans:
-- Remove imports/variables/functions that YOUR changes made unused.
-- Don't remove pre-existing dead code unless asked.
-
-The test: Every changed line should trace directly to the user's request.
-
-## 4. Goal-Driven Execution
-
-**Define success criteria. Loop until verified.**
-
-Transform tasks into verifiable goals:
-- "Add validation" → "Write tests for invalid inputs, then make them pass"
-- "Fix the bug" → "Write a test that reproduces it, then make it pass"
-- "Refactor X" → "Ensure tests pass before and after"
-
-For multi-step tasks, state a brief plan:
-```
-1. [Step] → verify: [check]
-2. [Step] → verify: [check]
-3. [Step] → verify: [check]
-```
-
-Strong success criteria let you loop independently. Weak criteria ("make it work") require constant clarification.
-
----
-
-**These guidelines are working if:** fewer unnecessary changes in diffs, fewer rewrites due to overcomplication, and clarifying questions come before implementation rather than after mistakes.
+> 行为指南（Think Before Coding / Simplicity First / Surgical Changes / Goal-Driven Execution）见根 [../CLAUDE.md](../CLAUDE.md)。
