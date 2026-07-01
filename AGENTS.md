@@ -6,7 +6,7 @@
 
 ## 项目概述
 
-**wechat-link-autogame-xcx** —— 基于图像识别的**微信小程序游戏自动化**系统（Python 3.13 + PyQt6，仅 Windows）。
+**wechat-link-autogame-xcx** —— 基于图像识别的**视觉流程自动化**系统（Python 3.13 + PyQt6，仅 Windows）。
 
 本地执行引擎（模板编辑 / 图像匹配 / DPI 坐标 / DGOCR / 执行器 / 报告）+ **MCP 服务端**（供 [wechat-ilink-bot](../wechat-ilink-bot) 通过 JSON-RPC over HTTP+SSE 远程调用执行模板）。
 

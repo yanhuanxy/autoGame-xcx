@@ -1,5 +1,5 @@
 """
-游戏自动化系统主程序
+视觉流程自动化系统主程序
 提供命令行界面进行系统测试和基本操作
 """
 import argparse
@@ -179,7 +179,7 @@ def test_template_management():
     print("1. 创建测试模板...")
     template = manager.create_template_structure(
         "测试模板",
-        "测试小程序游戏",
+        "测试应用",
         {'width': 1920, 'height': 1080, 'dpi': 96}
     )
     print("✓ 模板结构创建成功")
@@ -281,7 +281,7 @@ def main():
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
         datefmt="%H:%M:%S",
     )
-    parser = argparse.ArgumentParser(description='游戏自动化系统 - Phase 2 完善版本')
+    parser = argparse.ArgumentParser(description='视觉流程自动化系统 - Phase 2 完善版本')
     parser.add_argument('--test', choices=['window', 'image', 'coordinate', 'template', 'all'],
                        help='运行指定测试')
     parser.add_argument('--execute', type=str, help='执行指定模板文件')
@@ -345,7 +345,7 @@ def main():
         except Exception as e:
             print(f"生成报告时出错: {e}")
     else:
-        print("游戏自动化系统 - Phase 2 完善版本")
+        print("视觉流程自动化系统 - Phase 2 完善版本")
         print("使用 --help 查看可用选项")
         print("\n快速测试:")
         print("  python process_main.py --test all")

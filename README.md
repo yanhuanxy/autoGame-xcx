@@ -1,6 +1,6 @@
 # wechat-link-autogame-xcx
 
-> 微信小程序游戏自动化系统：本地图像识别执行引擎 + MCP 服务端
+> 视觉流程自动化系统：本地图像识别执行引擎 + MCP 服务端
 
 [![Python](https://img.shields.io/badge/python-3.13-blue.svg)](https://www.python.org/)
 [![Platform](https://img.shields.io/badge/platform-Windows-blue.svg)](https://learn.microsoft.com/windows/)

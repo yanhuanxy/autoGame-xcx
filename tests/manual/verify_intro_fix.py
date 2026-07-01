@@ -149,7 +149,7 @@ def show_user_experience():
 
 def main():
     """主函数"""
-    print("🎮 游戏自动化系统 - 项目介绍页面缩放修复验证")
+    print("🎮 视觉流程自动化系统 - 项目介绍页面缩放修复验证")
     
     # 显示修复内容
     show_intro_page_fixes()

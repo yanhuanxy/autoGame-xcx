@@ -174,7 +174,7 @@ class GameWindowController:
             return None
     
     def locate_game_area(self, screenshot=None):
-        """定位小程序游戏区域（简单版本，后续可以优化）"""
+        """定位目标应用区域（简单版本，后续可以优化）"""
         if screenshot is None:
             screenshot = self.capture_window_screenshot()
         

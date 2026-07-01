@@ -49,7 +49,7 @@ class ReportGenerator:
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>游戏自动化执行报告</title>
+    <title>视觉流程自动化执行报告</title>
     <style>
         {self._get_css_styles()}
     </style>
@@ -57,7 +57,7 @@ class ReportGenerator:
 <body>
     <div class="container">
         <header class="report-header">
-            <h1>🎮 游戏自动化执行报告</h1>
+            <h1>🎮 视觉流程自动化执行报告</h1>
             <div class="report-meta">
                 <span>生成时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</span>
             </div>
@@ -70,7 +70,7 @@ class ReportGenerator:
         {self._create_statistics_section(execution_data)}
         
         <footer class="report-footer">
-            <p>报告由游戏自动化系统自动生成 - Phase 2</p>
+            <p>报告由视觉流程自动化系统自动生成 - Phase 2</p>
         </footer>
     </div>
     
@@ -592,7 +592,7 @@ class ReportGenerator:
 
         report_lines = [
             "=" * 50,
-            "游戏自动化执行摘要报告",
+            "视觉流程自动化执行摘要报告",
             "=" * 50,
             f"执行时间: {execution_data.get('start_time', 'N/A')} - {execution_data.get('end_time', 'N/A')}",
             f"模板文件: {os.path.basename(execution_data.get('template_path', 'N/A'))}",

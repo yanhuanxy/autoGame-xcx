@@ -548,7 +548,7 @@ class IntegratedTemplateCreator(QWidget):
                 updated_data = dialog.get_area_data()
                 # 如果名称改变了，需要重新保存参考图像
                 if updated_data['name'] != area_data['name']:
-                    self.save_reference_image(area_data['user_marked_area'], updated_data['name'])
+                    self.save_reference_image(area_coords, updated_data['name'])
                     updated_data['reference_image'] = f"{updated_data['name']}.png"
 
                 self.marked_areas[current_row] = updated_data
@@ -702,7 +702,7 @@ class IntegratedTemplateCreator(QWidget):
                 return
 
         # 创建模板测试对话框
-        from dialog.template_test_dialog import TemplateTestDialog
+        from autogame_xcx.ui.dialogs.template_test_dialog import TemplateTestDialog
         dialog = TemplateTestDialog(self.current_template, self)
         dialog.exec()
 
@@ -734,8 +734,8 @@ class IntegratedTemplateCreator(QWidget):
             self.game_name_edit.setText(template_info.get('game_name', ''))
             self.description_edit.setPlainText(template_info.get('description', ''))
 
-            # 加载全局设置
-            global_settings = template_info.get('global_settings', {})
+            # 加载全局设置（global_settings 在模板顶层，不在 template_info 下）
+            global_settings = template_data.get('global_settings', {})
             self.max_retry_spin.setValue(global_settings.get('max_retry', 3))
             self.step_delay_spin.setValue(global_settings.get('step_delay', 1000))
 

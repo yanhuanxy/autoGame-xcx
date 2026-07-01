@@ -1,4 +1,4 @@
-"""wechat-link-autogame-xcx：微信小程序游戏自动化系统。
+"""wechat-link-autogame-xcx：视觉流程自动化系统。
 
 三层架构：
     - 本地执行层（core/ + platform/ + ocr/）：图像匹配 + DPI 自适应坐标转换 + DGOCR

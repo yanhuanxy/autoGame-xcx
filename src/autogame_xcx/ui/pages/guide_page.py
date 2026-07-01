@@ -66,6 +66,10 @@ class GuidePage(QWidget):
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QScrollArea.Shape.NoFrame)
         scroll.setStyleSheet(f"QScrollArea {{ background-color: {C.BG}; border: none; }}")
+        # QScrollArea 的 QSS 不覆盖 viewport —— 显式给 viewport 与正文设深色底，
+        # 否则明亮标题/暗描述会落在浅色默认 viewport 上（看不清）。
+        scroll.viewport().setStyleSheet(f"background-color: {C.BG};")
+        self._body.setStyleSheet(f"background-color: {C.BG};")
         scroll.setWidget(self._body)
 
         root.addWidget(toc)
@@ -106,7 +110,7 @@ class GuidePage(QWidget):
             box.setStyleSheet(
                 f"background-color: {C.PANEL}; border: 1px solid {C.BORDER}; "
                 f"border-left: 2px solid {C.ACCENT}; border-radius: 0 8px 8px 0; "
-                f"color: {C.TEXT_3}; font-size: 12.5px; padding: 12px 14px;"
+                f"color: {C.TEXT_2}; font-size: 12.5px; padding: 12px 14px;"
             )
             layout.addSpacing(6)
             layout.addWidget(box)

@@ -130,7 +130,7 @@ def show_technical_implementation():
 
 def main():
     """主函数"""
-    print("🎮 游戏自动化系统 - 项目介绍页面缩放修复")
+    print("🎮 视觉流程自动化系统 - 项目介绍页面缩放修复")
     
     # 显示修复详情
     show_fix_details()

@@ -98,7 +98,7 @@ def show_usage_examples():
 
 def main():
     """主函数"""
-    print("🎮 游戏自动化系统 - 模板列表修复验证")
+    print("🎮 视觉流程自动化系统 - 模板列表修复验证")
     
     # 验证修复效果
     verify_list_improvements()

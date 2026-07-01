@@ -260,7 +260,7 @@ def test_template_manager():
     # 创建测试模板
     template = manager.create_template_structure(
         "每日签到模板",
-        "测试小程序游戏",
+        "测试应用",
         {'width': 1920, 'height': 1080, 'dpi': 96}
     )
     

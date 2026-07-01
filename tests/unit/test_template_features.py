@@ -189,7 +189,7 @@ def test_enhanced_gui_features():
 def main():
     """主测试函数"""
     print("=" * 60)
-    print("游戏自动化系统 - 测试功能验证")
+    print("视觉流程自动化系统 - 测试功能验证")
     print("=" * 60)
     
     tests = [

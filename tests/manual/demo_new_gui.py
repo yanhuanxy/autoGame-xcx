@@ -5,7 +5,7 @@
 
 def demo_gui_features():
     """演示GUI功能特性"""
-    print("🎮 游戏自动化系统 - 新界面设计演示")
+    print("🎮 视觉流程自动化系统 - 新界面设计演示")
     print("=" * 60)
     
     print("\n🎨 界面设计特点:")
@@ -107,7 +107,7 @@ def show_technical_details():
 
 def main():
     """主演示函数"""
-    print("🎮 游戏自动化系统 - 新界面设计")
+    print("🎮 视觉流程自动化系统 - 新界面设计")
     print("左侧菜单栏 + 右侧内容区域的现代化设计")
     print("=" * 60)
     

@@ -7,6 +7,7 @@ from PyQt6.QtWidgets import QDialog, QVBoxLayout, QGroupBox, QFormLayout, QCombo
 
 from autogame_xcx.core.image_matcher import ImageMatcher
 from autogame_xcx.platform.window_controller import GameWindowController
+from autogame_xcx.ui.theme import C
 
 import cv2
 
@@ -81,7 +82,7 @@ class MatchingTestDialog(QDialog):
         current_layout.addWidget(QLabel("当前截图:"))
         self.current_preview = QLabel()
         self.current_preview.setFixedSize(200, 150)
-        self.current_preview.setStyleSheet("border: 2px solid #ccc; background-color: #f9f9f9;")
+        self.current_preview.setStyleSheet(f"border: 1px solid {C.BORDER_STRONG}; background-color: {C.PANEL};")
         self.current_preview.setScaledContents(True)
         self.current_preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
         current_layout.addWidget(self.current_preview)
@@ -91,7 +92,7 @@ class MatchingTestDialog(QDialog):
         reference_layout.addWidget(QLabel("参考图像:"))
         self.reference_preview = QLabel()
         self.reference_preview.setFixedSize(200, 150)
-        self.reference_preview.setStyleSheet("border: 2px solid #ccc; background-color: #f9f9f9;")
+        self.reference_preview.setStyleSheet(f"border: 1px solid {C.BORDER_STRONG}; background-color: {C.PANEL};")
         self.reference_preview.setScaledContents(True)
         self.reference_preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
         reference_layout.addWidget(self.reference_preview)
@@ -101,7 +102,7 @@ class MatchingTestDialog(QDialog):
         diff_layout.addWidget(QLabel("差异分析:"))
         self.diff_preview = QLabel()
         self.diff_preview.setFixedSize(200, 150)
-        self.diff_preview.setStyleSheet("border: 2px solid #ccc; background-color: #f9f9f9;")
+        self.diff_preview.setStyleSheet(f"border: 1px solid {C.BORDER_STRONG}; background-color: {C.PANEL};")
         self.diff_preview.setScaledContents(True)
         self.diff_preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
         diff_layout.addWidget(self.diff_preview)
@@ -118,7 +119,7 @@ class MatchingTestDialog(QDialog):
 
         # 结果统计
         self.stats_label = QLabel("等待测试...")
-        self.stats_label.setStyleSheet("font-weight: bold; color: #666;")
+        self.stats_label.setStyleSheet(f"font-weight: bold; color: {C.TEXT_3};")
         results_layout.addWidget(self.stats_label)
 
         # 详细结果
@@ -133,17 +134,16 @@ class MatchingTestDialog(QDialog):
         button_layout = QHBoxLayout()
 
         self.start_test_btn = QPushButton("开始测试")
+        self.start_test_btn.setObjectName("PrimaryBtn")
         self.start_test_btn.clicked.connect(self.start_test)
-        self.start_test_btn.setStyleSheet("QPushButton { background-color: #4CAF50; color: white; font-weight: bold; padding: 10px; }")
 
         self.continuous_test_btn = QPushButton("连续测试")
         self.continuous_test_btn.clicked.connect(self.start_continuous_test)
-        self.continuous_test_btn.setStyleSheet("QPushButton { background-color: #2196F3; color: white; font-weight: bold; padding: 10px; }")
 
         self.stop_test_btn = QPushButton("停止测试")
+        self.stop_test_btn.setObjectName("DangerBtn")
         self.stop_test_btn.clicked.connect(self.stop_test)
         self.stop_test_btn.setEnabled(False)
-        self.stop_test_btn.setStyleSheet("QPushButton { background-color: #f44336; color: white; font-weight: bold; padding: 10px; }")
 
         self.close_btn = QPushButton("关闭")
         self.close_btn.clicked.connect(self.close)
@@ -418,13 +418,13 @@ class MatchingTestDialog(QDialog):
     def log_message(self, message, level="info"):
         """记录消息"""
         color_map = {
-            "info": "#333333",
-            "success": "#4CAF50",
-            "warning": "#FF9800",
-            "error": "#f44336"
+            "info": C.TEXT_2,
+            "success": C.GREEN,
+            "warning": C.YELLOW,
+            "error": C.RED,
         }
 
-        color = color_map.get(level, "#333333")
+        color = color_map.get(level, C.TEXT_2)
         formatted_message = f'<span style="color: {color};">{message}</span>'
 
         self.results_text.append(formatted_message)

@@ -168,7 +168,7 @@ def show_advantages():
 
 def main():
     """主函数"""
-    print("🎮 游戏自动化系统 - 集成模板创建工具")
+    print("🎮 视觉流程自动化系统 - 集成模板创建工具")
     
     # 显示集成功能特性
     show_integration_features()

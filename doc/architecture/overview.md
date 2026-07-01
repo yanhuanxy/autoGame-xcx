@@ -4,7 +4,7 @@
 
 ## 定位
 
-基于图像识别的**微信小程序游戏自动化**：本地执行引擎（模板编辑 → 图像匹配 → DPI 坐标 → OCR → 执行 → 报告）+ **MCP 服务端**（供 [wechat-ilink-bot](../../../wechat-ilink-bot) 通过 JSON-RPC over HTTP+SSE 远程调用执行模板）。
+基于图像识别的**视觉流程自动化**：本地执行引擎（模板编辑 → 图像匹配 → DPI 坐标 → OCR → 执行 → 报告）+ **MCP 服务端**（供 [wechat-ilink-bot](../../../wechat-ilink-bot) 通过 JSON-RPC over HTTP+SSE 远程调用执行模板）。
 
 > 远程驱动（ilink）与 LLM 编排已迁出至 wechat-ilink-bot；本项目专注本地执行 + MCP 暴露。
 

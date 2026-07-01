@@ -5,6 +5,7 @@ from PyQt6.QtWidgets import QDialog, QVBoxLayout, QGroupBox, QFormLayout, QCombo
     QRadioButton, QCheckBox, QTextEdit, QApplication
 
 from autogame_xcx.core.game_executor import GameExecutor
+from autogame_xcx.ui.theme import C
 
 
 class TemplateTestDialog(QDialog):
@@ -86,13 +87,13 @@ class TemplateTestDialog(QDialog):
         button_layout = QHBoxLayout()
 
         self.start_test_btn = QPushButton("开始测试")
+        self.start_test_btn.setObjectName("PrimaryBtn")
         self.start_test_btn.clicked.connect(self.start_test)
-        self.start_test_btn.setStyleSheet("QPushButton { background-color: #4CAF50; color: white; font-weight: bold; padding: 8px; }")
 
         self.stop_test_btn = QPushButton("停止测试")
+        self.stop_test_btn.setObjectName("DangerBtn")
         self.stop_test_btn.clicked.connect(self.stop_test)
         self.stop_test_btn.setEnabled(False)
-        self.stop_test_btn.setStyleSheet("QPushButton { background-color: #f44336; color: white; font-weight: bold; padding: 8px; }")
 
         self.close_btn = QPushButton("关闭")
         self.close_btn.clicked.connect(self.close)
@@ -341,13 +342,13 @@ class TemplateTestDialog(QDialog):
 
         # 设置颜色
         color_map = {
-            "info": "#333333",
-            "success": "#4CAF50",
-            "warning": "#FF9800",
-            "error": "#f44336"
+            "info": C.TEXT_2,
+            "success": C.GREEN,
+            "warning": C.YELLOW,
+            "error": C.RED,
         }
 
-        color = color_map.get(level, "#333333")
+        color = color_map.get(level, C.TEXT_2)
         formatted_message = f'<span style="color: {color};">[{timestamp}] {message}</span>'
 
         self.results_text.append(formatted_message)

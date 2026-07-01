@@ -123,7 +123,7 @@ def show_comparison():
 
 def main():
     """主函数"""
-    print("🎮 游戏自动化系统 - 项目介绍页面简化修复")
+    print("🎮 视觉流程自动化系统 - 项目介绍页面简化修复")
     
     # 显示修复总结
     show_fix_summary()

@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-from PyQt6.QtGui import QFont
+from PyQt6.QtGui import QColor, QFont, QPalette
 from PyQt6.QtWidgets import QApplication
 
 
@@ -55,8 +55,34 @@ def mono_font(size: int = 11) -> QFont:
     return f
 
 
+def _dark_palette() -> QPalette:
+    """深色 QPalette 基线 —— 让未被 QSS 显式命中的自绘控件（弹窗/分组框/下拉/
+    滚动区 viewport）也默认深色，而非回退到 Windows 浅色系统默认。"""
+    p = QPalette()
+    p.setColor(QPalette.ColorRole.Window, QColor(C.BG))
+    p.setColor(QPalette.ColorRole.WindowText, QColor(C.TEXT_2))
+    p.setColor(QPalette.ColorRole.Base, QColor(C.STATUSBAR_BG))
+    p.setColor(QPalette.ColorRole.AlternateBase, QColor(C.PANEL))
+    p.setColor(QPalette.ColorRole.Text, QColor(C.TEXT))
+    p.setColor(QPalette.ColorRole.Button, QColor(C.PANEL))
+    p.setColor(QPalette.ColorRole.ButtonText, QColor(C.TEXT_2))
+    p.setColor(QPalette.ColorRole.ToolTipBase, QColor(C.PANEL))
+    p.setColor(QPalette.ColorRole.ToolTipText, QColor(C.TEXT))
+    p.setColor(QPalette.ColorRole.PlaceholderText, QColor(C.TEXT_4))
+    p.setColor(QPalette.ColorRole.Highlight, QColor(C.ACCENT))
+    p.setColor(QPalette.ColorRole.HighlightedText, QColor("#ffffff"))
+    disabled = QPalette.ColorGroup.Disabled
+    p.setColor(disabled, QPalette.ColorRole.Text, QColor(C.TEXT_4))
+    p.setColor(disabled, QPalette.ColorRole.ButtonText, QColor(C.TEXT_4))
+    p.setColor(disabled, QPalette.ColorRole.WindowText, QColor(C.TEXT_4))
+    return p
+
+
 def apply_theme(app: QApplication) -> None:
-    """对 QApplication 应用深色控制台 QSS。"""
+    """对 QApplication 应用深色控制台主题（Fusion + 深色 QPalette + QSS）。"""
+    # Fusion 尊重自定义 QPalette；windowsvista 默认 style 会忽略部分 palette。
+    app.setStyle("Fusion")
+    app.setPalette(_dark_palette())
     app.setStyleSheet(QSS)
 
 
@@ -159,4 +185,58 @@ QHeaderView::section {{
 QToolTip {{
     background-color: {C.PANEL}; color: {C.TEXT}; border: 1px solid {C.BORDER_STRONG};
 }}
+
+/* 弹窗 / 分组框 / 下拉 / 数字框 —— 让对话框默认贴合深色控制台 */
+QDialog {{ background-color: {C.BG}; }}
+QMessageBox {{ background-color: {C.BG}; }}
+QGroupBox {{
+    background-color: {C.PANEL}; border: 1px solid {C.BORDER}; border-radius: 8px;
+    margin-top: 10px; padding: 8px; color: {C.TEXT_2};
+}}
+QGroupBox::title {{
+    subcontrol-origin: margin; subcontrol-position: top left; left: 10px; padding: 0 4px;
+    color: {C.TEXT_4}; font-family: {MONO_FAMILIES[0]}, {', '.join(MONO_FAMILIES[1:])};
+}}
+QTextEdit, QPlainTextEdit, QTextBrowser {{
+    background-color: {C.STATUSBAR_BG}; color: {C.TEXT};
+    border: 1px solid {C.BORDER_STRONG}; border-radius: 6px; padding: 6px;
+}}
+QSpinBox, QDoubleSpinBox {{
+    background-color: {C.STATUSBAR_BG}; color: {C.TEXT};
+    border: 1px solid {C.BORDER_STRONG}; border-radius: 6px; padding: 4px 8px;
+}}
+QSpinBox:focus, QDoubleSpinBox:focus {{ border-color: {C.ACCENT}; }}
+QSpinBox::up-button, QSpinBox::down-button,
+QDoubleSpinBox::up-button, QDoubleSpinBox::down-button {{
+    width: 16px; border: none; background: transparent;
+}}
+QSpinBox::up-arrow, QDoubleSpinBox::up-arrow {{
+    width: 0; height: 0; border-left: 4px solid transparent;
+    border-right: 4px solid transparent; border-bottom: 5px solid {C.TEXT_4};
+}}
+QSpinBox::down-arrow, QDoubleSpinBox::down-arrow {{
+    width: 0; height: 0; border-left: 4px solid transparent;
+    border-right: 4px solid transparent; border-top: 5px solid {C.TEXT_4};
+}}
+QComboBox {{
+    background-color: {C.STATUSBAR_BG}; color: {C.TEXT};
+    border: 1px solid {C.BORDER_STRONG}; border-radius: 6px; padding: 4px 10px;
+}}
+QComboBox:focus {{ border-color: {C.ACCENT}; }}
+QComboBox::drop-down {{ border: none; width: 18px; }}
+QComboBox::down-arrow {{
+    width: 0; height: 0; border-left: 4px solid transparent;
+    border-right: 4px solid transparent; border-top: 5px solid {C.TEXT_4};
+}}
+QComboBox QAbstractItemView {{
+    background-color: {C.PANEL}; color: {C.TEXT_2};
+    border: 1px solid {C.BORDER_STRONG}; border-radius: 6px; outline: 0;
+    selection-background-color: {C.ACCENT_SOFT}; selection-color: {C.TEXT};
+}}
+QCheckBox {{ color: {C.TEXT_2}; spacing: 7px; }}
+QCheckBox::indicator {{
+    width: 15px; height: 15px; border-radius: 4px;
+    border: 1px solid {C.BORDER_STRONG}; background-color: {C.STATUSBAR_BG};
+}}
+QCheckBox::indicator:checked {{ background-color: {C.ACCENT}; border-color: {C.ACCENT}; }}
 """

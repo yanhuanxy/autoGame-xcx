@@ -2,6 +2,7 @@ from PyQt6.QtGui import QImage, QPixmap
 from PyQt6.QtWidgets import QDialog, QVBoxLayout, QGroupBox, QFormLayout, QLabel, QTextEdit, QHBoxLayout, QPushButton
 
 from autogame_xcx.core.image_matcher import ImageMatcher
+from autogame_xcx.ui.theme import C
 
 import cv2
 import os
@@ -58,14 +59,14 @@ class AreaTestDialog(QDialog):
         current_label = QLabel("当前截图:")
         self.current_image_label = QLabel()
         self.current_image_label.setFixedSize(100, 100)
-        self.current_image_label.setStyleSheet("border: 1px solid #ccc;")
+        self.current_image_label.setStyleSheet(f"border: 1px solid {C.BORDER_STRONG}; background-color: {C.PANEL};")
         self.current_image_label.setScaledContents(True)
 
         # 参考图像
         reference_label = QLabel("参考图像:")
         self.reference_image_label = QLabel()
         self.reference_image_label.setFixedSize(100, 100)
-        self.reference_image_label.setStyleSheet("border: 1px solid #ccc;")
+        self.reference_image_label.setStyleSheet(f"border: 1px solid {C.BORDER_STRONG}; background-color: {C.PANEL};")
         self.reference_image_label.setScaledContents(True)
 
         preview_layout.addWidget(current_label)
@@ -200,13 +201,13 @@ class AreaTestDialog(QDialog):
     def log_message(self, message, level="info"):
         """记录消息"""
         color_map = {
-            "info": "#333333",
-            "success": "#4CAF50",
-            "warning": "#FF9800",
-            "error": "#f44336"
+            "info": C.TEXT_2,
+            "success": C.GREEN,
+            "warning": C.YELLOW,
+            "error": C.RED,
         }
 
-        color = color_map.get(level, "#333333")
+        color = color_map.get(level, C.TEXT_2)
         formatted_message = f'<span style="color: {color};">{message}</span>'
 
         self.results_text.append(formatted_message)

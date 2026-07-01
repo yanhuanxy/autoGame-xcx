@@ -1,5 +1,5 @@
 """
-游戏自动化系统主界面 —— 精简 shell（Phase E2）。
+视觉流程自动化系统主界面 —— 精简 shell（Phase E2）。
 
 仅承担：窗口外壳 + 左侧导航（NavSideBar）+ QStackedWidget 路由 + 状态栏 +
 跨页编排（launch_advanced_creator）。各页内容已迁至 ``ui/pages/``：
@@ -54,7 +54,7 @@ class MainGUI(QMainWindow):
 
     def init_ui(self):
         self.setObjectName("MainGUI")
-        self.setWindowTitle("游戏自动化系统 - 智能模板管理平台")
+        self.setWindowTitle("视觉流程自动化系统 - 智能模板管理平台")
         self.setGeometry(100, 100, 1300, 800)
         self.setMinimumSize(1000, 800)
         # 主题在 QApplication 层应用（start_main_gui.py 调 apply_theme）
@@ -108,7 +108,7 @@ class MainGUI(QMainWindow):
         logo_icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
         logo_icon.setStyleSheet(f"background-color: {C.ACCENT}; border-radius: 8px;")
         logo_icon.setPixmap(icons.pixmap("logo", "#ffffff", 18))
-        title = QLabel("游戏自动化")
+        title = QLabel("视觉流程自动化")
         title.setStyleSheet(f"color: {C.TEXT}; font-size: 13px; font-weight: 600;")
         sub = QLabel("v2.0 · AUTO")
         sub.setStyleSheet(f"color: {C.TEXT_4}; font-family: '{mono}'; font-size: 10px; letter-spacing: 0.5px;")
@@ -269,7 +269,7 @@ def main():
     app = QApplication(sys.argv)
 
     # 设置应用程序信息
-    app.setApplicationName("游戏自动化系统")
+    app.setApplicationName("视觉流程自动化系统")
     app.setApplicationVersion("Phase 2.0")
     app.setOrganizationName("AutoGame Team")
 

@@ -1,7 +1,7 @@
 # PLAN_01：代码结构规范化
 
 > 状态：✅ 已落地（src layout + 分层包 core/platform/ocr/ui/mcp/utils + uv/ruff/mypy/pytest 工具链，是当前架构基础）
-> 项目：`wechat-link-autogame-xcx`（微信小程序游戏自动化）
+> 项目：`wechat-link-autogame-xcx`（视觉流程自动化）
 > 方向：引入 src layout + 分层包 + 现代工具链，解决现有工程债
 > 预计周期：5 阶段 × 2~3 天 = 约 2 周
 > 前置依赖：无（方向 1 是方向 2/3 的前置）
@@ -168,7 +168,7 @@ wechat-link-autogame-xcx/
 │   └── duguang-ocr-onnx-v2/
 │
 ├── doc/
-│   ├── PRD_游戏自动化系统.md
+│   ├── PRD_视觉流程自动化系统.md
 │   ├── design.md
 │   ├── requirements.md
 │   └── plans/                              # ★ 本文件所在目录

@@ -1,7 +1,8 @@
 """
-游戏自动化系统主界面启动器
+视觉流程自动化系统主界面启动器
 启动新设计的左侧菜单栏界面
 """
+
 import ctypes
 import logging
 import sys
@@ -41,7 +42,7 @@ def main():
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
         datefmt="%H:%M:%S",
     )
-    print("正在启动游戏自动化系统主界面...")
+    print("正在启动视觉流程自动化系统主界面...")
     app = QApplication(sys.argv)
     apply_theme(app)
     window = MainGUI()

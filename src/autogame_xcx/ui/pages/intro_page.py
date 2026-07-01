@@ -20,9 +20,9 @@ class IntroPage(QWidget):
         eyebrow.setStyleSheet(
             f"color: {C.ACCENT}; font-family: '{mono}'; font-size: 11px; letter-spacing: 2px;"
         )
-        title = QLabel("游戏自动化系统")
+        title = QLabel("视觉流程自动化系统")
         title.setStyleSheet(f"color: {C.TEXT}; font-size: 24px; font-weight: 700;")
-        subtitle = QLabel("基于图像识别的智能游戏自动化解决方案")
+        subtitle = QLabel("基于图像识别的智能视觉流程自动化平台")
         subtitle.setStyleSheet(f"color: {C.TEXT_3}; font-size: 13px;")
 
         outer.addWidget(eyebrow)

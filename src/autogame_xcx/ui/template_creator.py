@@ -1,6 +1,6 @@
 """
 PyQt6可视化模板创建工具
-提供用户友好的图形界面来创建游戏自动化模板
+提供用户友好的图形界面来创建视觉流程自动化模板
 """
 import sys
 import os
@@ -315,7 +315,7 @@ class TemplateCreatorGUI(QMainWindow):
         self.init_ui()
     
     def init_ui(self):
-        self.setWindowTitle("游戏自动化模板创建工具 - Phase 2")
+        self.setWindowTitle("视觉流程自动化模板创建工具 - Phase 2")
         self.setGeometry(100, 100, 1400, 900)
         
         # 创建中央部件
@@ -425,7 +425,7 @@ class TemplateCreatorGUI(QMainWindow):
         self.template_name_edit.setPlaceholderText("例如: 每日签到模板")
 
         self.game_name_edit = QLineEdit()
-        self.game_name_edit.setPlaceholderText("例如: 某某小程序游戏")
+        self.game_name_edit.setPlaceholderText("例如: 某某应用")
 
         template_layout.addRow("模板名称:", self.template_name_edit)
         template_layout.addRow("游戏名称:", self.game_name_edit)
@@ -913,6 +913,7 @@ class TemplateCreatorGUI(QMainWindow):
                     area_data['action_type'],
                     area_data['user_marked_area'],
                     area_data['reference_image'],
+                    area_data.get('match_algorithm', 'hybrid'),
                     area_data['match_threshold'],
                     area_data.get('click_point'),
                     area_data['wait_after']
@@ -964,7 +965,7 @@ def main():
     app = QApplication(sys.argv)
 
     # 设置应用程序信息
-    app.setApplicationName("游戏自动化模板创建工具")
+    app.setApplicationName("视觉流程自动化模板创建工具")
     app.setApplicationVersion("Phase 2")
     app.setOrganizationName("AutoGame Team")
 

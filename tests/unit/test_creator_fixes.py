@@ -182,7 +182,7 @@ def show_testing_guide():
 
 def main():
     """主函数"""
-    print("🎮 游戏自动化系统 - 模板创建工具修复验证")
+    print("🎮 视觉流程自动化系统 - 模板创建工具修复验证")
     
     # 显示修复总结
     show_fixes_summary()

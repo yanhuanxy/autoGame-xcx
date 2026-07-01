@@ -29,7 +29,7 @@ class StepItem(QWidget):
         t = QLabel(title)
         t.setStyleSheet(f"color: {C.TEXT}; font-size: 13.5px;")
         d = QLabel(description)
-        d.setStyleSheet(f"color: {C.TEXT_3}; font-size: 12.5px;")
+        d.setStyleSheet(f"color: {C.TEXT_2}; font-size: 12.5px;")
         d.setWordWrap(True)
         col.addWidget(t)
         col.addWidget(d)

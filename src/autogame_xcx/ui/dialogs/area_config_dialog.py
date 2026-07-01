@@ -158,9 +158,9 @@ class AreaConfigDialog(QDialog):
             'width': self.area_coords['width'],
             'height': self.area_coords['height'],
             'click_point': {"x":self.click_x.value(),"y": self.click_y.value()},
-            'action_type': self.action_combo.currentText(),
+            'action_type': self.action_combo.currentData(),
             'match_threshold': self.threshold_spin.value(),
-            'match_algorithm': self.algorithm_combo.currentText(),
+            'match_algorithm': self.algorithm_combo.currentData(),
             'wait_after': self.wait_after_spin.value()
         }
 
@@ -169,13 +169,20 @@ class AreaConfigDialog(QDialog):
         self.name_edit.setText(area_data.get('name', ''))
 
         action_type = area_data.get('action_type', 'image_verify_and_click')
-        index = self.action_combo.findText(action_type)
+        index = self.action_combo.findData(action_type)
         if index >= 0:
             self.action_combo.setCurrentIndex(index)
 
         self.threshold_spin.setValue(area_data.get('match_threshold', 0.85))
 
         algorithm = area_data.get('match_algorithm', 'hybrid')
-        index = self.algorithm_combo.findText(algorithm)
+        index = self.algorithm_combo.findData(algorithm)
         if index >= 0:
             self.algorithm_combo.setCurrentIndex(index)
+
+        self.wait_after_spin.setValue(area_data.get('wait_after', 2000))
+
+        click_point = area_data.get('click_point')
+        if click_point:
+            self.click_x.setValue(click_point.get('x', self.click_x.value()))
+            self.click_y.setValue(click_point.get('y', self.click_y.value()))
