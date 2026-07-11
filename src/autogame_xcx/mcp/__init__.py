@@ -7,9 +7,20 @@
     ExecutorBridge  — 串行化 GameExecutor/TemplateManager 访问的桥接层
     list_all_tools / call_tool — MCP tool 元数据与分发（tools.py）
     McpServerThread — 跑 SSE server 的 QThread（server.py）
+    McpServerConfig / load_server_config — host + 鉴权 token 配置（server_config.py，迭代C）
 """
+
 from autogame_xcx.mcp.executor_bridge import ExecutorBridge
 from autogame_xcx.mcp.server import McpServerThread
+from autogame_xcx.mcp.server_config import McpServerConfig
+from autogame_xcx.mcp.server_config import load as load_server_config
 from autogame_xcx.mcp.tools import call_tool, list_all_tools
 
-__all__ = ["ExecutorBridge", "McpServerThread", "call_tool", "list_all_tools"]
+__all__ = [
+    "ExecutorBridge",
+    "McpServerThread",
+    "McpServerConfig",
+    "load_server_config",
+    "call_tool",
+    "list_all_tools",
+]

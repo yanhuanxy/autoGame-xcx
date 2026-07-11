@@ -2,13 +2,17 @@
 
 不依赖 ilink/JVM，仅校验 list_all_tools 返回结构与 schema 完整性。
 """
+
 from __future__ import annotations
 
-import pytest
+import asyncio
+import json
 
+import pytest
 from mcp.types import Tool
 
 from autogame_xcx.mcp import list_all_tools
+from autogame_xcx.mcp.tools import call_tool
 
 
 def test_list_all_tools_returns_five() -> None:
@@ -50,3 +54,52 @@ def test_tool_metadata_complete(missing: str) -> None:
     """每个 tool 都必须有 description 和 inputSchema（防止漏填）。"""
     for tool in list_all_tools():
         assert hasattr(tool, missing), f"{tool.name} 缺少 {missing}"
+
+
+def test_all_tools_have_optional_caller_property() -> None:
+    """迭代C：所有 tool 都接受可选 caller 字段，且不强制必填（兼容旧客户端）。"""
+    for tool in list_all_tools():
+        assert "caller" in tool.inputSchema["properties"], f"{tool.name} 缺少 caller 字段"
+        assert "caller" not in tool.inputSchema["required"], f"{tool.name} 的 caller 不应是必填"
+
+
+class _StubBridge:
+    """call_tool 分发测试用的最小 bridge 替身，记录收到的参数。"""
+
+    def __init__(self) -> None:
+        self.run_template_args: tuple | None = None
+        self.stop_execution_args: tuple | None = None
+
+    def run_template(self, name: str, caller: str | None = None) -> dict:
+        self.run_template_args = (name, caller)
+        return {"template": name, "success": True}
+
+    def stop_execution(self, caller: str | None = None) -> dict:
+        self.stop_execution_args = (caller,)
+        return {"stopped": False, "reason": "stub"}
+
+
+def test_call_tool_run_template_passes_caller_to_bridge() -> None:
+    bridge = _StubBridge()
+
+    result = asyncio.run(call_tool(bridge, "run_template", {"name": "签到", "caller": "bot1"}))
+
+    assert bridge.run_template_args == ("签到", "bot1")
+    payload = json.loads(result[0].text)
+    assert payload["template"] == "签到"
+
+
+def test_call_tool_run_template_withoutCaller_passesNone() -> None:
+    bridge = _StubBridge()
+
+    asyncio.run(call_tool(bridge, "run_template", {"name": "签到"}))
+
+    assert bridge.run_template_args == ("签到", None)
+
+
+def test_call_tool_stop_execution_passes_caller_to_bridge() -> None:
+    bridge = _StubBridge()
+
+    asyncio.run(call_tool(bridge, "stop_execution", {"caller": "bot1"}))
+
+    assert bridge.stop_execution_args == ("bot1",)

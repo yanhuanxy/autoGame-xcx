@@ -43,6 +43,14 @@
 - **F3 subagents ✅**：`.claude/agents/ui-reviewer.md`（只读审查 UI 改动 vs 设计稿 + ui-conventions/architecture，出分级清单）、`.claude/agents/explore.md`（带架构分层规则的隔离只读探索）。
 - **F4 skills ✅**：`.claude/skills/run-gui/SKILL.md`（启动 GUI + 5 页截图到 `data/debug/`，含 offscreen 抓图脚本）、`.claude/skills/add-template-page/SKILL.md`（按既有约定脚手架新导航页，含契约测试同步清单）。
 
+### Phase G：MCP 鉴权 + host 可配置 + 调用方隔离 ✅（对应 wechat-ilink-bot 迭代 C.1）
+
+- **鉴权中间件**：`mcp/server.py` 新增 `_BearerAuthMiddleware`（`starlette.middleware.base.BaseHTTPMiddleware`），`auth_token` 非空时校验 `/sse`、`/messages` 的 `Authorization: Bearer <token>`，为空跳过（本地开发兼容）。
+- **host 可配置**：`McpServerThread` 加 `auth_token` 参数；新增 `mcp/server_config.py`（读 `data/mcp_server_config.json`，缺省生成模板），`ui/main_window.py::_build_mcp_server()` 用它装配 host/token，不再硬编码 `127.0.0.1`。
+- **调用方隔离**：`mcp/executor_bridge.py` 的 `ExecutorBridge` 新增 `_current_caller`；`run_template` 记录发起方，`get_status` 报告 owner，`stop_execution` 校验 owner（非本人越权请求拒绝并说明当前运行方）；`mcp/tools.py` 5 个 tool 的 `inputSchema` 都加可选 `caller` 字段并透传。
+- 测试：`test_mcp_server.py`（新增，中间件 401/放行）、`test_mcp_server_config.py`（新增，配置加载/模板生成）、`test_mcp_executor_bridge.py`/`test_mcp_tools.py` 补 caller 相关用例；`uv run pytest tests/unit` = 90 passed/2 skipped，ruff 净（新增代码范围内；`executor_bridge.py`/`server.py` 各 1 处预存 lint 债未动，见既有备注）。
+- **本轮不做**（留给后续）：真实跨机网络部署验证、GUI 端 host/token 可视化编辑（仍走配置文件）、`GameExecutor` 真中断（`stop_execution` 越权判断已生效，但 owner 校验通过后仍是既有 stub）。
+
 ---
 
 ## 进行中：UI 像素级精细化（对照设计稿方案 A，分两批）
@@ -58,5 +66,5 @@
 
 ## 不在范围内
 
-- 远程驱动 / LLM 编排：归 wechat-ilink-bot。
+- 远程驱动（ilink 指令编排）/ LLM 编排：归 wechat-ilink-bot。MCP server 自身的鉴权/host 配置已落地本仓库（见 Phase G），不算"远程驱动"。
 - `core/process_main.py` 反向 import ui 的彻底消除：随 Phase E 入口层重构一并处理。

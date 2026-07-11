@@ -37,7 +37,7 @@ autogame_xcx/
 │                         #          coordinate_converter / report_generator / process_main(CLI)
 ├── platform/             # Windows API 隔离：window_controller（窗口枚举/激活/缩放/截图）
 ├── ocr/                  # OCR：engine + dgocr/（自研 ONNX det+rec+seglink）
-├── mcp/                  # MCP 服务端：server / tools / executor_bridge（→ core.GameExecutor）
+├── mcp/                  # MCP 服务端：server / server_config / tools / executor_bridge（→ core.GameExecutor）
 ├── ui/                   # PyQt6 GUI（Phase E 薄壳化已完成）：
 │   ├── main_window.py    #   MainGUI 薄壳：标题栏 + 侧栏 + content_stack + 状态栏 + 5 页路由
 │   ├── pages/            #   导航页：intro / management / creator / guide（+ dialogs/mcp_server_page）

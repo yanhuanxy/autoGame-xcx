@@ -63,3 +63,5 @@ DEMO_IMAGES_PATH = str(PROJECT_ROOT / "data" / "demo_images")
 REPORTS_PATH = str(PROJECT_ROOT / "data" / "reports")
 # 模板
 TEMPLATES_PATH = str(PROJECT_ROOT / "data" / "templates")
+# MCP server 配置（host / 鉴权 token）
+MCP_SERVER_CONFIG_PATH = str(PROJECT_ROOT / "data" / "mcp_server_config.json")

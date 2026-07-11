@@ -232,15 +232,22 @@ class MainGUI(QMainWindow):
     def _build_mcp_server(self):
         """构造 McpServerThread。注入 executor + template_manager。
 
+        host/鉴权 token 从 data/mcp_server_config.json 加载（迭代C，缺省 127.0.0.1 + 不鉴权，向后兼容）。
         线程不会立刻 start；用户在 UI 上点"启动"后才 start。
         """
-        from autogame_xcx.mcp import ExecutorBridge, McpServerThread
+        from autogame_xcx.mcp import ExecutorBridge, McpServerThread, load_server_config
 
         bridge = ExecutorBridge(
             executor=self.game_executor,
             template_manager=self.template_manager,
         )
-        return McpServerThread(bridge=bridge, port=8765)
+        server_config = load_server_config()
+        return McpServerThread(
+            bridge=bridge,
+            port=8765,
+            host=server_config.host,
+            auth_token=server_config.auth_token,
+        )
 
     def refresh_templates(self) -> None:
         """代理：刷新模板管理页列表（供模板创建页保存后调用）。"""

@@ -40,6 +40,8 @@ __pycache__/
 ### Secrets ###
 # LLM 配置含明文 API key，禁止入库；仅保留 example 模板
 data/config/remote_llm.json
+# MCP server 鉴权 token（迭代C），禁止入库
+data/mcp_server_config.json
 .env
 .env.local
 
