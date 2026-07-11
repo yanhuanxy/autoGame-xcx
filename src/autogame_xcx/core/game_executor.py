@@ -5,6 +5,7 @@
 import json
 import logging
 import os
+import threading
 import time
 from datetime import datetime
 
@@ -21,6 +22,10 @@ from autogame_xcx.platform.window_controller import GameWindowController
 from autogame_xcx.utils.constants import REPORTS_PATH
 
 logger = logging.getLogger(__name__)
+
+
+class ExecutionCancelledError(Exception):
+    """cancel_event 被 set 时在下一个安全检查点抛出，表示执行被外部取消。"""
 
 
 class GameExecutor:
@@ -135,7 +140,18 @@ class GameExecutor:
 
         return True
 
-    def execute_template(self, template_path):
+    def _sleep_or_cancel(self, seconds, cancel_event):
+        """按小片段睡眠；cancel_event 被 set 时立即抛 ExecutionCancelledError。"""
+        if cancel_event is None:
+            time.sleep(seconds)
+            return
+        deadline = time.monotonic() + seconds
+        while time.monotonic() < deadline:
+            if cancel_event.is_set():
+                raise ExecutionCancelledError("execution cancelled")
+            time.sleep(min(0.2, deadline - time.monotonic()))
+
+    def execute_template(self, template_path, cancel_event: threading.Event | None = None):
         """执行模板"""
         logger.info(f"\n开始执行模板: {template_path}")
         
@@ -163,22 +179,27 @@ class GameExecutor:
         failed_tasks = 0
         
         for task in tasks:
+            if cancel_event is not None and cancel_event.is_set():
+                raise ExecutionCancelledError("execution cancelled")
+
             if not task.get('enabled', True):
                 logger.info(f"跳过已禁用的任务: {task['task_name']}")
                 continue
-            
+
             logger.info(f"\n执行任务: {task['task_name']}")
-            
-            task_result = self.execute_task(task)
+
+            task_result = self.execute_task(task, cancel_event=cancel_event)
             self.execution_report['tasks'].append(task_result)
-            
+
             if task_result['status'] == 'completed':
                 completed_tasks += 1
             else:
                 failed_tasks += 1
-            
+
             # 任务间延迟
-            time.sleep(self.current_template['global_settings'].get('step_delay', 1000) / 1000)
+            self._sleep_or_cancel(
+                self.current_template['global_settings'].get('step_delay', 1000) / 1000, cancel_event
+            )
         
         # 4. 生成执行报告
         self.execution_report['end_time'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -195,7 +216,7 @@ class GameExecutor:
 
         return True
     
-    def execute_task(self, task):
+    def execute_task(self, task, cancel_event: threading.Event | None = None):
         """执行单个任务"""
         task_result = {
             'task_name': task['task_name'],
@@ -205,31 +226,37 @@ class GameExecutor:
             'retry_count': 0,
             'error_message': None
         }
-        
+
         max_retry = self.current_template['global_settings'].get('max_retry', 3)
-        
+
         for retry in range(max_retry + 1):
+            if cancel_event is not None and cancel_event.is_set():
+                raise ExecutionCancelledError("execution cancelled")
+
             if retry > 0:
                 logger.info(f"  重试第 {retry} 次...")
                 task_result['retry_count'] = retry
-                time.sleep(2)  # 重试前等待
-            
+                self._sleep_or_cancel(2, cancel_event)  # 重试前等待
+
             success = True
             task_result['steps'] = []
-            
+
             # 执行任务的所有步骤
             for step in task['steps']:
+                if cancel_event is not None and cancel_event.is_set():
+                    raise ExecutionCancelledError("execution cancelled")
+
                 step_result = self.execute_step(step)
                 task_result['steps'].append(step_result)
-                
+
                 if not step_result['success']:
                     success = False
                     task_result['error_message'] = step_result.get('error_message', '步骤执行失败')
                     break
-                
+
                 # 步骤间延迟
                 wait_time = step.get('wait_after', 1000) / 1000
-                time.sleep(wait_time)
+                self._sleep_or_cancel(wait_time, cancel_event)
             
             if success:
                 task_result['status'] = 'completed'

@@ -64,6 +64,25 @@
   - 验证：`pytest tests/unit` = 71 passed/2 skipped；ruff 净；`/run-gui` 5 页截图生成（`data/debug/page_*.png`，12-17KB 非空）。
 - **第二批（待启动，用户验收第一批后）**：intro/guide 加 PageHeader、mcp 收敛；FeatureCard desc 行高微调；可选 statusbar `set_context` 扩展。对照 FRAME A/F/G。
 
+### Phase H：多 bot 队列化调度 ✅（A 路线：严格串行 + 排队可见 + 真取消超时保护）
+
+现状问题（起因）：`mcp/executor_bridge.py::ExecutorBridge` 曾用单个 `threading.Lock` 把"整次模板执行"（截图→匹配→点击→报告）串成临界区，多个 bot 并发调用 `run_template` 时第二个请求裸阻塞、无排队感知；`core/game_executor.py::execute_task`/`execute_template` 无取消检查点，`stop_execution` 是 stub。存在风险：bot 端（wechat-ilink-bot）`McpClient` 的 `tools/call` 有 600s 硬超时，超时后清理 pending Future，但 Python 侧已拿到锁的执行不会收到取消信号，会继续跑到底——可能出现"bot 侧显示超时失败，但游戏内操作已真实发生且报告无人接收"的静默丢单/影子执行问题，且后续排队的其他 bot 会被这个卡住的任务一直堵住。
+
+决策（2026-07-11）：走 **A. 严格串行 + 排队可见 + 真取消超时保护**（不做真并发/多窗口路由，那是 B 路线，见下方「待办优化建议」）。
+
+实现：
+- **`core/game_executor.py`**：新增 `ExecutionCancelledError` + `_sleep_or_cancel` helper；`execute_template`/`execute_task` 签名加可选 `cancel_event: threading.Event | None`，在任务间/重试间/步骤间循环顶部和 `time.sleep` 调用处加检查点，`cancel_event.is_set()` 时立即抛出，向上传播、不吞。未传 `cancel_event`（`None`）时行为与改动前完全一致（向后兼容 `core/process_main.py` 等既有直接调用点）。
+- **`mcp/executor_bridge.py`**：用 `threading.Condition` 守护的 `deque[_QueueEntry]` FIFO 队列替换原 `threading.Lock` + 单值字段模型；新增 `QueueFullError`/`DuplicateCallerError`/`QueueWaitTimeoutError`/`EntryCancelledError`/`ExecutionOverdueError`。`run_template` 入队→排队等待（超时摘除）→提交唯一 `ThreadPoolExecutor(max_workers=1)` 执行（超时立即 `cancel_event.set()` + 提前返回 `ExecutionOverdueError`，后台线程在下一个检查点真正停止、清理逻辑写在 worker 自身 `finally` 里，不依赖前台是否还在等待）。`get_status(caller)` 新增 `queue_length`/`queue_position`/`overdue` 字段。`stop_execution(caller)` 从"不支持中断"的 stub 升级为真取消：排队中直接摘除，执行中发送取消信号（下一个安全检查点生效）。
+- **`mcp/server_config.py`**：`McpServerConfig` 新增 `queue_capacity`（默认 2）、`queue_wait_timeout_seconds`（默认 300s）、`execution_timeout_seconds`（默认 480s，`<=0` 表示禁用该超时）。
+- **`mcp/tools.py`**：`get_status` 补上此前遗漏的 `caller` 透传；新增 4 个新异常的 `except` 分支，返回结构化 `reason`（如 `queue_full`/`duplicate_caller`）；5 个 tool 的 description 补充排队/超时/真取消语义说明。
+- **`ui/main_window.py::_build_mcp_server()`**：把新增的三个配置项传给 `ExecutorBridge`。
+- 测试：新增 `test_game_executor_cancel.py`（cancel_event 检查点特征化）、`test_mcp_executor_bridge_queue.py`（排队位置/容量拒绝/排队超时/执行超时+overdue可见+最终清理/取消排队中任务/取消执行中任务，均用 `threading.Event` 驱动的假 executor + 毫秒级超时阈值，不真 sleep 300s/480s）；更新 `test_mcp_executor_bridge.py`（`stop_execution` 同 caller/空闲两个用例改为新行为）、`test_mcp_server_config.py`（新增字段加载/默认值/`0`=禁用）、`test_mcp_tools.py`（get_status caller 透传、新异常结构化返回）。`uv run pytest tests/unit` = 114 passed/2 skipped（较 Phase G 的 90 passed 新增 24 个用例），ruff 净（新增代码范围内；`game_executor.py`/`executor_bridge.py` 各 1 处预存 lint 债未动）。
+- **本轮不做**（留给后续，见下方「待办优化建议」）：真并发/多窗口路由（B 路线）；已排队/执行中任务的重试逻辑独立超时展示；`estimated_wait_seconds` 预估等待时长（无历史耗时统计，暂不做虚假精确度）。
+
+### Phase H 待办优化建议（未排期，先记录）
+
+**路线 B：真并发**（多个任务真正同时执行，各自操作各自窗口）——需拆出独立 `GameExecutor`/`GameWindowController` 实例、hwnd 显式穿透 mcp tool→bridge→executor→controller 四层、解决 `pyautogui.click`（系统唯一鼠标光标）与 `win32gui.SetForegroundWindow`（系统唯一前台窗口）的物理互斥、`ImageGrab.grab` 屏幕区域截图在窗口重叠时读错画面的问题。架构级改造，工作量与风险显著更高，且 autogame-xcx 当前仍是"仅 OCR、未完善 RPA/协议自动化"的半成品阶段，不适合现在投入。暂不启动；待"协议自动化 + RPA 完善"这条长期主线方向明确后一并评估启动时机。
+
 ## 不在范围内
 
 - 远程驱动（ilink 指令编排）/ LLM 编排：归 wechat-ilink-bot。MCP server 自身的鉴权/host 配置已落地本仓库（见 Phase G），不算"远程驱动"。

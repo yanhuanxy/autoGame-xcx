@@ -237,11 +237,14 @@ class MainGUI(QMainWindow):
         """
         from autogame_xcx.mcp import ExecutorBridge, McpServerThread, load_server_config
 
+        server_config = load_server_config()
         bridge = ExecutorBridge(
             executor=self.game_executor,
             template_manager=self.template_manager,
+            queue_capacity=server_config.queue_capacity,
+            queue_wait_timeout_seconds=server_config.queue_wait_timeout_seconds,
+            execution_timeout_seconds=server_config.execution_timeout_seconds,
         )
-        server_config = load_server_config()
         return McpServerThread(
             bridge=bridge,
             port=8765,

@@ -29,7 +29,7 @@ class _MockExecutor:
         self.calls: list[str] = []
         self.execution_report: dict = {}
 
-    def execute_template(self, filepath: str) -> bool:
+    def execute_template(self, filepath: str, cancel_event=None) -> bool:
         self.calls.append(filepath)
         self.execution_report = {
             "template_info": {"name": "签到"},
@@ -126,9 +126,9 @@ def test_run_template_records_caller_visible_via_status_during_execution() -> No
     bridge_ref: list = [None]
 
     class _ObservingExecutor(_MockExecutor):
-        def execute_template(self, filepath: str) -> bool:
+        def execute_template(self, filepath: str, cancel_event=None) -> bool:
             captured["status"] = bridge_ref[0].get_status()
-            return super().execute_template(filepath)
+            return super().execute_template(filepath, cancel_event=cancel_event)
 
     executor = _ObservingExecutor()
     tm = _MockTemplateManager([{"name": "签到", "filepath": "/x.json"}])
@@ -155,9 +155,9 @@ def test_stop_execution_wrongCaller_duringRun_rejectedAsUnauthorized() -> None:
     bridge_ref: list = [None]
 
     class _ObservingExecutor(_MockExecutor):
-        def execute_template(self, filepath: str) -> bool:
+        def execute_template(self, filepath: str, cancel_event=None) -> bool:
             captured["stop_by_other"] = bridge_ref[0].stop_execution(caller="bot2")
-            return super().execute_template(filepath)
+            return super().execute_template(filepath, cancel_event=cancel_event)
 
     executor = _ObservingExecutor()
     tm = _MockTemplateManager([{"name": "签到", "filepath": "/x.json"}])
@@ -172,14 +172,14 @@ def test_stop_execution_wrongCaller_duringRun_rejectedAsUnauthorized() -> None:
 
 
 def test_stop_execution_sameCaller_duringRun_notRejectedAsUnauthorized() -> None:
-    """发起方本人请求停止：越权校验放行，落到 GameExecutor 不支持中断的既有 stub 回复。"""
+    """发起方本人请求停止：越权校验放行，发送真取消信号（不会立即打断当前动作）。"""
     captured: dict = {}
     bridge_ref: list = [None]
 
     class _ObservingExecutor(_MockExecutor):
-        def execute_template(self, filepath: str) -> bool:
+        def execute_template(self, filepath: str, cancel_event=None) -> bool:
             captured["stop_by_owner"] = bridge_ref[0].stop_execution(caller="bot1")
-            return super().execute_template(filepath)
+            return super().execute_template(filepath, cancel_event=cancel_event)
 
     executor = _ObservingExecutor()
     tm = _MockTemplateManager([{"name": "签到", "filepath": "/x.json"}])
@@ -188,16 +188,16 @@ def test_stop_execution_sameCaller_duringRun_notRejectedAsUnauthorized() -> None
 
     bridge.run_template("签到", caller="bot1")
 
-    assert captured["stop_by_owner"]["stopped"] is False
-    assert "不支持中断" in captured["stop_by_owner"]["reason"]
+    assert captured["stop_by_owner"]["stopped"] is True
+    assert "取消信号" in captured["stop_by_owner"]["reason"]
 
 
 def test_stop_execution_idle_ignoresCaller() -> None:
-    """没有任务在跑时（owner=None），任何 caller 都不算越权，走通用 stub 回复。"""
+    """没有任务在跑、caller 也没有任何在途任务时，如实说明当前无事可停。"""
     bridge, _ = _make_bridge()
     result = bridge.stop_execution(caller="anyone")
     assert result["stopped"] is False
-    assert "不支持中断" in result["reason"]
+    assert "没有正在执行或排队中的任务" in result["reason"]
 
 
 def test_list_templates_failure_raises_runtime_error() -> None:

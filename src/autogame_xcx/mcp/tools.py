@@ -13,7 +13,13 @@ from typing import Any
 
 from mcp.types import TextContent, Tool
 
-from autogame_xcx.mcp.executor_bridge import ExecutorBridge
+from autogame_xcx.mcp.executor_bridge import (
+    DuplicateCallerError,
+    ExecutionOverdueError,
+    ExecutorBridge,
+    QueueFullError,
+    QueueWaitTimeoutError,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -41,8 +47,11 @@ def list_all_tools() -> list[Tool]:
         Tool(
             name="run_template",
             description=(
-                "按名称执行模板，阻塞到完成。"
-                "返回 {template, filepath, success, summary:{completed,total_tasks,success_rate}}。"
+                "按名称排队执行模板，阻塞到完成（或被取消/超时）。同一 caller 同时只能有一个"
+                "在途（排队中或执行中）请求，重复发起会被拒绝。队列已满/排队超时/执行超时都会"
+                "以 {error, reason} 返回，不会无限期挂起。"
+                "成功时返回 {template, filepath, success, summary:{completed,total_tasks,success_rate}}"
+                "（被取消时 summary={cancelled:true}）。"
             ),
             inputSchema={
                 "type": "object",
@@ -58,12 +67,21 @@ def list_all_tools() -> list[Tool]:
         ),
         Tool(
             name="get_status",
-            description="查询当前执行状态。返回 {running, current_template, caller, last_template}。",
+            description=(
+                "查询当前执行状态。返回 {running, current_template, caller, overdue, "
+                "queue_length, queue_position, last_template}。running/current_template/caller "
+                "描述队头（正在执行的任务），overdue 表示队头已越过执行超时阈值仍在物理运行；"
+                "传入 caller 时 queue_position 给出该 caller 的排队位置（1=正在执行/即将执行）。"
+            ),
             inputSchema={"type": "object", "properties": dict(_CALLER_PROPERTY), "required": []},
         ),
         Tool(
             name="stop_execution",
-            description="请求停止当前执行（仅发起方本人可停；GameExecutor 当前不支持真中断，会返回原因）。",
+            description=(
+                "请求停止 caller 对应的任务。排队中的任务会被直接摘除（真取消）；"
+                "执行中的任务会发送取消信号，在下一个安全检查点停止（不会立即打断当前动作）；"
+                "仅发起方本人可停止自己的任务，越权请求会被拒绝并说明当前运行方。"
+            ),
             inputSchema={"type": "object", "properties": dict(_CALLER_PROPERTY), "required": []},
         ),
         Tool(
@@ -91,13 +109,27 @@ async def call_tool(bridge: ExecutorBridge, name: str, arguments: dict) -> list[
                 bridge.run_template, args.get("name", ""), args.get("caller")
             )
         elif name == "get_status":
-            result = await asyncio.to_thread(bridge.get_status)
+            result = await asyncio.to_thread(bridge.get_status, args.get("caller"))
         elif name == "stop_execution":
             result = await asyncio.to_thread(bridge.stop_execution, args.get("caller"))
         elif name == "get_report":
             result = await asyncio.to_thread(bridge.get_report)
         else:
             result = {"error": f"unknown tool: {name}"}
+    except QueueFullError as e:
+        result = {
+            "error": str(e),
+            "tool": name,
+            "reason": "queue_full",
+            "queue_length": e.queue_length,
+            "queue_capacity": e.queue_capacity,
+        }
+    except DuplicateCallerError as e:
+        result = {"error": str(e), "tool": name, "reason": "duplicate_caller"}
+    except QueueWaitTimeoutError as e:
+        result = {"error": str(e), "tool": name, "reason": "queue_wait_timeout"}
+    except ExecutionOverdueError as e:
+        result = {"error": str(e), "tool": name, "reason": "execution_overdue"}
     except Exception as e:
         logger.exception("tool %s crashed", name)
         result = {"error": str(e), "tool": name}

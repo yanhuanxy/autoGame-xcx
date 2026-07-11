@@ -16,12 +16,29 @@ from autogame_xcx.utils.constants import MCP_SERVER_CONFIG_PATH
 logger = logging.getLogger(__name__)
 
 DEFAULT_HOST = "127.0.0.1"
+DEFAULT_QUEUE_CAPACITY = 2
+DEFAULT_QUEUE_WAIT_TIMEOUT_SECONDS = 300.0
+DEFAULT_EXECUTION_TIMEOUT_SECONDS = 480.0
 
 
 @dataclass
 class McpServerConfig:
     host: str = DEFAULT_HOST
     auth_token: str | None = None
+    # 迭代（Phase H）：执行队列容量与超时保护，见 mcp/executor_bridge.py
+    queue_capacity: int = DEFAULT_QUEUE_CAPACITY
+    queue_wait_timeout_seconds: float | None = DEFAULT_QUEUE_WAIT_TIMEOUT_SECONDS
+    execution_timeout_seconds: float | None = DEFAULT_EXECUTION_TIMEOUT_SECONDS
+
+
+def _load_timeout(data: dict, key: str, default: float | None) -> float | None:
+    """<=0 显式表示禁用该超时（None）；字段缺失则回退默认值。"""
+    if key not in data:
+        return default
+    value = data.get(key)
+    if value is None:
+        return None
+    return None if value <= 0 else float(value)
 
 
 def load(path: str = MCP_SERVER_CONFIG_PATH) -> McpServerConfig:
@@ -33,12 +50,25 @@ def load(path: str = MCP_SERVER_CONFIG_PATH) -> McpServerConfig:
         return McpServerConfig()
     try:
         data = json.loads(file.read_text(encoding="utf-8"))
+        queue_capacity = data.get("queue_capacity")
         config = McpServerConfig(
             host=data.get("host") or DEFAULT_HOST,
             auth_token=data.get("auth_token") or None,
+            queue_capacity=queue_capacity
+            if queue_capacity and queue_capacity > 0
+            else DEFAULT_QUEUE_CAPACITY,
+            queue_wait_timeout_seconds=_load_timeout(
+                data, "queue_wait_timeout_seconds", DEFAULT_QUEUE_WAIT_TIMEOUT_SECONDS
+            ),
+            execution_timeout_seconds=_load_timeout(
+                data, "execution_timeout_seconds", DEFAULT_EXECUTION_TIMEOUT_SECONDS
+            ),
         )
         logger.info(
-            "MCP server 配置已加载：host=%s, authTokenSet=%s", config.host, bool(config.auth_token)
+            "MCP server 配置已加载：host=%s, authTokenSet=%s, queue_capacity=%s",
+            config.host,
+            bool(config.auth_token),
+            config.queue_capacity,
         )
         return config
     except (OSError, json.JSONDecodeError):
