@@ -23,7 +23,7 @@ from jpype import JClass, JImplements, JOverride
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 SDK_TARGET = PROJECT_ROOT.parent / "wechat-ilink-sdk-java" / "target"
-JAR_PATH = SDK_TARGET / "wechat-ilink-sdk-2.4.0-SNAPSHOT.jar"
+JAR_PATH = SDK_TARGET / "wechat-ilink-sdk-3.0.0.jar"
 DEPS_DIR = SDK_TARGET / "dependency"
 
 CHECKS = []
