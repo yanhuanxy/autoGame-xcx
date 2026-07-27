@@ -90,4 +90,4 @@ autogame_xcx/
 - **onnxruntime + 自研 dgocr**：文字识别（模型走 Git LFS）
 - **pyautogui / pywin32 / psutil**：Windows 窗口与输入控制（隔离在 `platform/`）
 - **mcp**：MCP 服务端 SDK
-- **mitmproxy**：抓包（预留，方向 3）
+- **mitmproxy**：抓包（协议化主线依赖，见 PLAN_03；2026-07-27 定为长期主线）

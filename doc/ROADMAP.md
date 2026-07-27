@@ -81,7 +81,7 @@
 
 ### Phase H 待办优化建议（未排期，先记录）
 
-**路线 B：真并发**（多个任务真正同时执行，各自操作各自窗口）——需拆出独立 `GameExecutor`/`GameWindowController` 实例、hwnd 显式穿透 mcp tool→bridge→executor→controller 四层、解决 `pyautogui.click`（系统唯一鼠标光标）与 `win32gui.SetForegroundWindow`（系统唯一前台窗口）的物理互斥、`ImageGrab.grab` 屏幕区域截图在窗口重叠时读错画面的问题。架构级改造，工作量与风险显著更高，且 autogame-xcx 当前仍是"仅 OCR、未完善 RPA/协议自动化"的半成品阶段，不适合现在投入。暂不启动；待"协议自动化 + RPA 完善"这条长期主线方向明确后一并评估启动时机。
+**路线 B：真并发**（多个任务真正同时执行，各自操作各自窗口）——需拆出独立 `GameExecutor`/`GameWindowController` 实例、hwnd 显式穿透 mcp tool→bridge→executor→controller 四层、解决 `pyautogui.click`（系统唯一鼠标光标）与 `win32gui.SetForegroundWindow`（系统唯一前台窗口）的物理互斥、`ImageGrab.grab` 屏幕区域截图在窗口重叠时读错画面的问题。架构级改造，工作量与风险显著更高。**长期主线已定为协议化（PLAN_03，2026-07-27 owner 拍板）**：路线 B 真并发明确搁置，待协议化落地 + 实测排队成为瓶颈后重评；重评时优先考虑「多机部署」（每机一个 autogame 实例，复用 Phase H 队列）而非「单机多窗口」（撞物理互斥墙）。RPA 完善作为协议化落地前的保底，不单列为主线。
 
 ## 不在范围内
 

@@ -22,7 +22,7 @@
 | OCR | onnxruntime>=1.17 + 自研 dgocr | 模型走 Git LFS，放 `models/` |
 | 自动化 | pyautogui, pywin32 (Windows), psutil | 仅 Windows |
 | 几何 | shapely>=2.0, pyclipper | 多边形/区域 |
-| 抓包 | mitmproxy>=12.2 | 预留 |
+| 抓包 | mitmproxy>=12.2 | 协议化主线依赖（PLAN_03） |
 | MCP | mcp>=1.2 | 服务端 |
 | 包管理 | uv | 不用 pip 直接装；`uv sync` |
 | Lint/格式 | ruff>=0.6 | line-length 100，select E/F/I/B/UP/SIM |
